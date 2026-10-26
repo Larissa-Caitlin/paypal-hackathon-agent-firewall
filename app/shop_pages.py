@@ -39,7 +39,15 @@ def render_shop_page(shop_key) -> str:
 """
 
 
-def page_text_for_agent(shop_key) -> str:
-    """Return all page text as a scraping agent sees it, including display:none text."""
+def page_text_for_agent(shop_key, include_hidden: bool = True) -> str:
+    """Return page text as a scraping agent sees it.
+
+    By default this includes display:none text. With include_hidden=False,
+    elements styled display:none are removed first (what a shopper sees).
+    """
     soup = BeautifulSoup(render_shop_page(shop_key), "html.parser")
+    if not include_hidden:
+        for el in soup.find_all(style=True):
+            if "display:none" in el["style"].replace(" ", "").lower():
+                el.decompose()
     return soup.get_text(separator="\n", strip=True)
