@@ -32,7 +32,12 @@ class FakePayPal:
 
     def create_order(self, shop, amount, description, return_url, cancel_url):
         self.calls.append(("create_order", shop, amount))
-        return self.order.order_id, f"https://paypal.example/approve?token={self.order.order_id}"
+        order_id = self.order.order_id
+        if self.unique_orders:
+            order_id = f"{order_id}-{len(self.calls)}"
+        return order_id, f"https://paypal.example/approve?token={order_id}"
+
+    unique_orders = False
 
     def authorize_order(self, shop, order_id):
         self.calls.append(("authorize_order", shop, order_id))
@@ -65,6 +70,7 @@ class FakePayPal:
 def temp_db(tmp_path, monkeypatch):
     monkeypatch.setenv("AUDIT_DB_PATH", str(tmp_path / "flow_test.db"))
     monkeypatch.setenv("DEMO_ACCESS_KEY", TEST_KEY)
+    main.purchase_limiter.reset()
 
 
 @pytest.fixture
@@ -380,6 +386,44 @@ def test_concurrent_resolutions_make_exactly_one_paypal_call(client, monkeypatch
     assert pp.names().count("capture") + pp.names().count("void") == 1
     actions = [a["action"] for a in client.get(f"/decisions/{decision_id}").json()["actions"]]
     assert actions.count("user_approved") + actions.count("user_rejected") == 1
+
+
+# --- Rate limit on /purchase ---
+
+
+def post_purchase(client, headers=None):
+    return client.post("/purchase", json={"instruction": INSTRUCTION, "budget": "20.00"}, headers=headers or {})
+
+
+def test_purchase_rate_limited_per_ip(client, monkeypatch):
+    seen = agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    FakePayPal(monkeypatch, gadgethub_order()).unique_orders = True
+    for _ in range(10):
+        assert post_purchase(client).status_code == 200
+    resp = post_purchase(client)
+    assert resp.status_code == 429
+    assert "10 per hour" in resp.json()["detail"]
+    assert len(seen) == 10  # the agent did not run for the refused request
+
+
+def test_rate_limit_uses_first_forwarded_for_address(client, monkeypatch):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    FakePayPal(monkeypatch, gadgethub_order()).unique_orders = True
+    first = {"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}
+    for _ in range(10):
+        assert post_purchase(client, first).status_code == 200
+    assert post_purchase(client, first).status_code == 429
+    # Same proxy hop, different client: separate budget
+    assert post_purchase(client, {"X-Forwarded-For": "198.51.100.9, 10.0.0.1"}).status_code == 200
+
+
+def test_requests_without_valid_key_do_not_use_quota(client, monkeypatch):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    FakePayPal(monkeypatch, gadgethub_order())
+    anonymous = TestClient(main.app)
+    for _ in range(15):
+        assert anonymous.post("/purchase", json={"instruction": INSTRUCTION, "budget": "20.00"}).status_code == 401
+    assert post_purchase(client).status_code == 200
 
 
 # --- Demo UI ---

@@ -9,9 +9,30 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.14.4"
+      # PayPal sandbox: one REST app per shop (secrets set in the Render dashboard)
       - key: PAYPAL_BASE_URL
         value: https://api-m.sandbox.paypal.com
-      - key: PAYPAL_CLIENT_ID
+      - key: PAYPAL_TECHMART_CLIENT_ID
         sync: false
-      - key: PAYPAL_CLIENT_SECRET
+      - key: PAYPAL_TECHMART_CLIENT_SECRET
         sync: false
+      - key: PAYPAL_GADGETHUB_CLIENT_ID
+        sync: false
+      - key: PAYPAL_GADGETHUB_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_TECHMARTDEALS_CLIENT_ID
+        sync: false
+      - key: PAYPAL_TECHMARTDEALS_CLIENT_SECRET
+        sync: false
+      # LLM provider (OpenAI-compatible)
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: openai/gpt-oss-120b
+      - key: LLM_API_KEY
+        sync: false
+      # App
+      - key: DEMO_ACCESS_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://agent-payment-firewall.onrender.com

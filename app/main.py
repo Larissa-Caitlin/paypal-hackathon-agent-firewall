@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from app import audit, firewall, paypal_client
 from app.agent import Proposal, run_agent
 from app.catalog import get_product, list_shops
+from app.rate_limit import PurchaseLimiter, client_ip
 from app.result_page import render_result_page
 from app.shop_pages import page_text_for_agent, render_shop_page
 
@@ -63,6 +64,17 @@ def require_demo_key(x_demo_key: str | None = Header(default=None)):
     # Constant-time comparison so response timing doesn't leak the key
     if not x_demo_key or not hmac.compare_digest(x_demo_key.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="Missing or invalid X-Demo-Key header")
+
+
+# Protects the free LLM quota: 10 purchases per hour per client IP, 100 per day overall
+purchase_limiter = PurchaseLimiter()
+
+
+def limit_purchases(request: Request):
+    # Runs after the key check, so requests without a valid key never use up the quota
+    refusal = purchase_limiter.check(client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
 
 
 class PaymentProposal(BaseModel):
@@ -177,7 +189,7 @@ def _decision_response(decision_id):
     }
 
 
-@app.post("/purchase", dependencies=[Depends(require_demo_key)])
+@app.post("/purchase", dependencies=[Depends(require_demo_key), Depends(limit_purchases)])
 def purchase(req: PurchaseRequest):
     """Run the shopping agent and create a PayPal order (AUTHORIZE) for its proposal."""
     try:

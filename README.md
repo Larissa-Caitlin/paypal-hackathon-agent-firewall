@@ -8,6 +8,17 @@ AI shopping agents read web pages that anyone can write. A seller can hide instr
 
 In this repository's own test (see [Results](#results)), a hidden note in one seller's listing made the agent pick that seller in 9 of the 9 runs where it read the page, and the agent then gave the user a reason that the page does not support.
 
+## Live demo
+
+https://agent-payment-firewall.onrender.com
+
+- It runs on Render's free plan. The instance sleeps when idle, so the first request can take about a minute.
+- The audit log is SQLite on Render's ephemeral disk. It resets on every redeploy or restart.
+- `POST /purchase` is rate limited (10 per hour per client IP, 100 per day overall) to protect the free LLM quota.
+- PayPal runs in the sandbox only; no real money moves.
+
+Access key and sandbox buyer login: see the Devpost testing instructions.
+
 ## Screenshots
 
 ![Agent trace with hidden note highlighted](docs/images/trace-hidden-note.png)
@@ -119,6 +130,7 @@ PayPal REST API, called with `requests` (no SDK), sandbox only.
 - **Append-only audit log.** SQLite tables for purchases, decisions and actions. The module has no update or delete functions, and SQLite triggers reject `UPDATE` and `DELETE` on all three tables. Money is stored as strings.
 - **Parameterised SQL.** Every query uses `?` placeholders, because logged values include agent output and seller-influenced text.
 - **Access key.** `/purchase`, `GET /decisions/{id}` and approve/reject require `X-Demo-Key`, compared in constant time (`hmac.compare_digest`). If `DEMO_ACCESS_KEY` is not set, these routes return 503 instead of running open.
+- **Rate limit.** `POST /purchase` allows 10 requests per hour per client IP and 100 per day overall, then returns 429. It runs after the key check, so requests without a valid key do not use up the quota. The client IP is the first `X-Forwarded-For` value when present (Render sits behind a proxy); a client can set that header itself, so the per-IP limit is spoofable and the overall daily limit is the hard cap. Counters are in memory and reset on restart.
 - **Replay protection.** Reloading or replaying `/paypal/return` returns the existing decision without a second authorization. An order token the app did not create returns 404 with no PayPal calls.
 - **Race fix for approve/reject.** A partial unique index allows one `user_approved` or `user_rejected` action per decision. Approve/reject inserts that action first and only then calls PayPal; the loser of a race gets 409. The concurrency test was confirmed to fail with the index removed.
 - **XSS.** Server-rendered pages HTML-escape every value; the browser code inserts untrusted text with `textContent` only. A test checks that `<script>alert(1)</script>` in an agent reason and an AI finding is escaped.
@@ -258,6 +270,7 @@ app/
   audit.py           append-only SQLite audit log
   paypal_client.py   PayPal REST client, one app per shop
   llm.py             the only place the app calls an LLM
+  rate_limit.py      in-memory rate limit for POST /purchase
   result_page.py     server-rendered result page (all values escaped)
   static/            index.html, style.css, app.js, trace_view.js, result.js
 attacks/cases.json   the 18-case attack test set
