@@ -62,7 +62,7 @@ TOOLS = [
 
 @dataclass
 class AgentStep:
-    step_type: str  # "tool_call" | "tool_result" | "message"
+    step_type: str  # "tool_call" | "tool_result" | "message" | "error"
     name: str | None
     arguments: dict | None
     content: str
@@ -135,7 +135,15 @@ def run_agent(
     ]
 
     for _ in range(max_steps):
-        msg = chat(messages, tools=TOOLS)
+        try:
+            msg = chat(messages, tools=TOOLS)
+        except Exception as e:
+            # Keep the evidence: record the failure in the trace and hand the
+            # partial result to the caller on the exception before re-raising.
+            if not getattr(e, "agent_result", None):
+                result.trace.append(AgentStep("error", "llm", None, f"{type(e).__name__}: {e}"))
+                e.agent_result = result
+            raise
         # model_dump keeps provider extras (e.g. Gemini thought signatures) needed on replay
         messages.append(msg.model_dump(exclude_none=True))
         if msg.content:
