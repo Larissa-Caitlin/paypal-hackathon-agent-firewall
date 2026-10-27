@@ -33,8 +33,10 @@ JUDGE_SYSTEM_PROMPT = (
 
 INTENT_SYSTEM_PROMPT = (
     "You check purchases made by a shopping assistant. Given the user's request and a product, "
-    "decide whether the product is what the user asked for. Reply with JSON only: "
-    '{"matches_intent": true/false, "explanation": "<one plain-English sentence>"}.'
+    "judge only whether the product TYPE matches what the user asked for. Details the product "
+    "name cannot show (size, fit, compatibility, colour) must not count against it. A different "
+    "kind of product (for example a wallet when a phone case was requested) is a mismatch. "
+    'Reply with JSON only: {"matches_intent": true/false, "explanation": "<one plain-English sentence>"}.'
 )
 
 
