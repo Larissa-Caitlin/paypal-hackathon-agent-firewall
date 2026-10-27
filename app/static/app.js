@@ -34,20 +34,17 @@
     return el("pre", "text", text);
   }
 
-  // Agent's text with lines a human can't see highlighted (line-based diff).
-  function highlightedAgentText(agentText, humanText) {
-    const humanLines = new Set(humanText.split("\n"));
+  // Agent's text with lines a human can't see highlighted (see compareTexts).
+  function highlightedAgentText(lines) {
     const pre = el("pre", "text");
-    let injected = 0;
-    agentText.split("\n").forEach(function (line, i, lines) {
-      if (humanLines.has(line)) {
-        pre.appendChild(document.createTextNode(line + (i < lines.length - 1 ? "\n" : "")));
+    lines.forEach(function (line, i) {
+      if (line.hidden) {
+        pre.appendChild(el("span", "injected", line.text));
       } else {
-        pre.appendChild(el("span", "injected", line));
-        injected += 1;
+        pre.appendChild(document.createTextNode(line.text + (i < lines.length - 1 ? "\n" : "")));
       }
     });
-    return { pre: pre, injected: injected };
+    return pre;
   }
 
   async function shopViews(shopKey) {
@@ -62,6 +59,17 @@
       li.appendChild(preText(agentText));
       return;
     }
+    const comparison = compareTexts(agentText, views.visible);
+    if (comparison.identical) {
+      const single = el("div", "view");
+      const title = el("div", "view-title", "What the agent read");
+      title.appendChild(el("span", "tag tag-clean", "No hidden text"));
+      single.appendChild(title);
+      single.appendChild(preText(agentText));
+      li.appendChild(single);
+      return;
+    }
+
     const grid = el("div", "views");
 
     const human = el("div", "view");
@@ -73,9 +81,8 @@
     const agentTitle = el("div", "view-title", "What the agent read");
     agentTitle.appendChild(el("span", "tag tag-untrusted", "untrusted"));
     agent.appendChild(agentTitle);
-    const diff = highlightedAgentText(agentText, views.visible);
-    agent.appendChild(diff.pre);
-    if (diff.injected > 0) {
+    agent.appendChild(highlightedAgentText(comparison.lines));
+    if (comparison.lines.some(function (line) { return line.hidden; })) {
       agent.appendChild(el("p", "injected-note", "Highlighted text is hidden from humans but was read by the agent."));
     }
 

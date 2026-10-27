@@ -394,7 +394,12 @@ def test_index_and_static_files_served_with_csp(client):
     assert resp.headers["content-type"].startswith("text/html")
     assert "script-src 'self'" in resp.headers["content-security-policy"]
     assert 'src="/static/app.js"' in resp.text
-    for path, kind in [("/static/style.css", "text/css"), ("/static/app.js", "javascript"), ("/static/result.js", "javascript")]:
+    for path, kind in [
+        ("/static/style.css", "text/css"),
+        ("/static/app.js", "javascript"),
+        ("/static/result.js", "javascript"),
+        ("/static/trace_view.js", "javascript"),
+    ]:
         r = client.get(path)
         assert r.status_code == 200, path
         assert kind in r.headers["content-type"]
@@ -405,8 +410,9 @@ def test_static_pages_have_no_inline_scripts():
 
     static = Path(main.__file__).parent / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
-    assert html.count("<script") == 1 and 'src="/static/app.js"' in html
-    for name in ("app.js", "result.js"):
+    assert html.count("<script") == 2
+    assert 'src="/static/trace_view.js"' in html and 'src="/static/app.js"' in html
+    for name in ("app.js", "result.js", "trace_view.js"):
         js = (static / name).read_text(encoding="utf-8")
         for usage in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write", "localStorage.", "sessionStorage.", "document.cookie"):
             assert usage not in js, f"{name} uses {usage}"

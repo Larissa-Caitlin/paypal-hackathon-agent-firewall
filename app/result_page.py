@@ -7,6 +7,9 @@ seller text) and even platform data, so nothing on this page can become markup.
 import json
 from html import escape
 
+from app.catalog import list_shops
+from app.policy import ALLOWED_MERCHANTS
+
 VERDICT_LABELS = {"allow": "ALLOW", "block": "BLOCK", "hold": "HOLD"}
 VERDICT_SUMMARIES = {
     "allow": "All checks passed. The payment was captured.",
@@ -44,9 +47,30 @@ def _rule_rows(rules):
     return f'<table class="findings"><tbody>{rows}</tbody></table>'
 
 
+def _payee(merchant_id):
+    """Merchant id plus whose account it is, from platform policy (trusted)."""
+    if not merchant_id:
+        return '<span class="muted">none (no PayPal order)</span>'
+    names = dict(list_shops())
+    shop_key = next((k for k, v in ALLOWED_MERCHANTS.items() if v == merchant_id), None)
+    if shop_key:
+        label = f"({names.get(shop_key, shop_key)}, approved)"
+        return f'<span class="payee-approved">{_e(merchant_id)} {_e(label)}</span>'
+    return f'<span class="payee-unapproved">{_e(merchant_id)} (not an approved shop)</span>'
+
+
+def _summary(rules, ai):
+    failed = sum(not f["passed"] for f in rules)
+    flagged = sum(f["flagged"] for f in ai)
+    rules_text = f"Rules: {failed} of {len(rules)} failed" if rules else "Rules: none ran"
+    ai_text = f"AI checks: {flagged} of {len(ai)} flagged" if ai else "AI checks: none ran"
+    return f"{rules_text} · {ai_text}"
+
+
 def _ai_rows(ai):
     if not ai:
         return '<p class="muted">No AI checks ran for this payment.</p>'
+    ai = sorted(ai, key=lambda f: not f["flagged"])  # flagged first; stable within each group
     rows = "".join(
         f"<tr><td>{_status(not f['flagged'], 'OK', 'FLAGGED')}</td>"
         f"<td class=\"mono\">{_e(f['detector'])}<br><span class=\"muted\">{_e(f['check'])}</span></td>"
@@ -90,6 +114,7 @@ def render_result_page(row) -> str:
     reasons = json.loads(row["reasons_json"])
     findings = json.loads(row["findings_json"])
     reasons_html = "".join(f"<li>{_e(r)}</li>" for r in reasons)
+    rules, ai = findings.get("rules", []), findings.get("ai", [])
 
     return f"""<!doctype html>
 <html lang="en">
@@ -110,6 +135,7 @@ def render_result_page(row) -> str:
     <span class="badge badge-{_e(decision)}">{_e(VERDICT_LABELS.get(decision, decision))}</span>
     <p class="verdict-summary">{_e(VERDICT_SUMMARIES.get(decision, ""))}</p>
     <ul class="reasons">{reasons_html}</ul>
+    <p class="check-summary">{_e(_summary(rules, ai))}</p>
   </section>
 
   <section class="card">
@@ -133,7 +159,7 @@ def render_result_page(row) -> str:
       <dl>
         <dt>Order</dt><dd class="mono">{_e(row["order_id"])}</dd>
         <dt>Amount</dt><dd>{_e(row["paypal_amount"])} {_e(row["paypal_currency"])}</dd>
-        <dt>Payee merchant</dt><dd class="mono">{_e(row["payee_merchant_id"])}</dd>
+        <dt>Payee merchant</dt><dd class="mono">{_payee(row["payee_merchant_id"])}</dd>
         <dt>Your budget</dt><dd>${_e(row["budget"])}</dd>
       </dl>
     </section>
@@ -141,12 +167,12 @@ def render_result_page(row) -> str:
 
   <section class="card">
     <h2>Rule checks <span class="tag tag-trusted">deterministic</span></h2>
-    {_rule_rows(findings.get("rules", []))}
+    {_rule_rows(rules)}
   </section>
 
   <section class="card">
     <h2>AI checks <span class="tag tag-ai">can only escalate</span></h2>
-    {_ai_rows(findings.get("ai", []))}
+    {_ai_rows(ai)}
   </section>
 </main>
 <script src="/static/result.js" defer></script>
