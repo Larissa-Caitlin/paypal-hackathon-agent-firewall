@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Payment Firewall</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="container">
+  <header class="page-header">
+    <h1>Agent Payment Firewall</h1>
+    <p class="muted">An AI shopping agent proposes a purchase. The firewall checks it before any money moves.</p>
+  </header>
+
+  <section class="card">
+    <h2>Start a purchase</h2>
+    <form id="purchase-form" autocomplete="off">
+      <label for="access-key">Access key</label>
+      <input id="access-key" type="password" required autocomplete="off">
+
+      <label for="instruction">Instruction to the shopping agent</label>
+      <textarea id="instruction" rows="2" maxlength="500" required>Buy me a phone case for my 6.1-inch phone.</textarea>
+
+      <div class="grid-2">
+        <div>
+          <label for="budget">Budget (USD)</label>
+          <input id="budget" type="number" min="0.01" step="0.01" value="20" required>
+        </div>
+        <div>
+          <label for="scenario">Scenario</label>
+          <select id="scenario">
+            <option value="poisoned">poisoned: all shops, hidden text reaches the agent</option>
+            <option value="clean">clean: approved shops only</option>
+            <option value="control">control: all shops, hidden text stripped</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button type="submit" id="submit" class="button button-primary">Run shopping agent</button>
+      </div>
+      <p id="status" class="outcome" role="status"></p>
+    </form>
+  </section>
+
+  <section id="results" hidden>
+    <section class="card" id="trace-card">
+      <h2>Agent trace</h2>
+      <p class="muted">Every step the agent took, in order. Page text is written by sellers and is untrusted.</p>
+      <ol id="trace" class="trace"></ol>
+    </section>
+
+    <section class="card trust-untrusted" id="proposal-card" hidden>
+      <h2>Agent's proposal <span class="tag tag-untrusted">unverified claim</span></h2>
+      <dl id="proposal"></dl>
+      <p class="muted">Nothing has been paid. Approving in PayPal only holds the funds; the firewall then decides.</p>
+      <div class="button-row">
+        <a id="approve-link" class="button button-primary" href="#">Approve payment in PayPal</a>
+      </div>
+    </section>
+
+    <section class="verdict verdict-block" id="blocked-card" hidden>
+      <span class="badge badge-block">BLOCK</span>
+      <p class="verdict-summary">No PayPal order was created.</p>
+      <ul id="blocked-reasons" class="reasons"></ul>
+    </section>
+  </section>
+</main>
+<script src="/static/app.js" defer></script>
+</body>
+</html>

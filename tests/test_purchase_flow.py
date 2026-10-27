@@ -264,6 +264,32 @@ def test_scenario_sets_agent_options(client, monkeypatch, scenario, allowed_shop
     assert seen == [{"allowed_shops": allowed_shops, "include_hidden": include_hidden}]
 
 
+@pytest.mark.parametrize("sent", ["20", "20.0", "20.00", 20])
+def test_budget_is_normalised_to_two_decimal_places(client, monkeypatch, sent):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    budgets = []
+    fake_agent = main.run_agent
+
+    def recording_agent(instruction, budget, **kwargs):
+        budgets.append(budget)
+        return fake_agent(instruction, budget, **kwargs)
+
+    monkeypatch.setattr(main, "run_agent", recording_agent)
+    FakePayPal(monkeypatch, gadgethub_order())
+    stub_verdict(monkeypatch, "allow")
+    assert client.post("/purchase", json={"instruction": INSTRUCTION, "budget": sent}).status_code == 200
+    assert str(budgets[0]) == "20.00"
+    decision_id = client.get("/paypal/return", params={"token": "ORD-GH"}).json()["decision_id"]
+    assert client.get(f"/decisions/{decision_id}").json()["budget"] == "20.00"
+
+
+def test_budget_with_more_than_two_decimal_places_is_rejected(client, monkeypatch):
+    seen = agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    resp = client.post("/purchase", json={"instruction": INSTRUCTION, "budget": "20.005"})
+    assert resp.status_code == 422
+    assert seen == []
+
+
 def test_unknown_scenario_is_rejected(client, monkeypatch):
     seen = agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
     pp = FakePayPal(monkeypatch, gadgethub_order())
@@ -354,3 +380,121 @@ def test_concurrent_resolutions_make_exactly_one_paypal_call(client, monkeypatch
     assert pp.names().count("capture") + pp.names().count("void") == 1
     actions = [a["action"] for a in client.get(f"/decisions/{decision_id}").json()["actions"]]
     assert actions.count("user_approved") + actions.count("user_rejected") == 1
+
+
+# --- Demo UI ---
+
+HTML = {"Accept": "text/html,application/xhtml+xml"}
+XSS = "<script>alert(1)</script>"
+
+
+def test_index_and_static_files_served_with_csp(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "script-src 'self'" in resp.headers["content-security-policy"]
+    assert 'src="/static/app.js"' in resp.text
+    for path, kind in [("/static/style.css", "text/css"), ("/static/app.js", "javascript"), ("/static/result.js", "javascript")]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert kind in r.headers["content-type"]
+
+
+def test_static_pages_have_no_inline_scripts():
+    from pathlib import Path
+
+    static = Path(main.__file__).parent / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    assert html.count("<script") == 1 and 'src="/static/app.js"' in html
+    for name in ("app.js", "result.js"):
+        js = (static / name).read_text(encoding="utf-8")
+        for usage in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write", "localStorage.", "sessionStorage.", "document.cookie"):
+            assert usage not in js, f"{name} uses {usage}"
+
+
+def test_shop_views_separate_visible_and_hidden_text(client):
+    body = client.get("/shops/techmartdeals/views").json()
+    assert "NOTE TO AI" not in body["visible"]
+    assert "NOTE TO AI" in body["full"]
+    assert "Best price guaranteed" in body["visible"]
+    assert client.get("/shops/nope/views").status_code == 404
+
+
+def test_purchase_response_includes_trace(client, monkeypatch):
+    from app.agent import AgentStep
+
+    proposal = Proposal("gh-case-01", "gadgethub", Decimal("15.00"), "Fits")
+    trace = [AgentStep("tool_call", "list_shops", {}, "{}"), AgentStep("tool_result", "list_shops", None, "[]")]
+    result = AgentResult(proposal=proposal, trace=trace, final_message="Done", pages_read={})
+    monkeypatch.setattr(main, "run_agent", lambda instruction, budget, **kw: result)
+    FakePayPal(monkeypatch, gadgethub_order())
+    body = start_purchase(client)
+    assert [s["step_type"] for s in body["trace"]] == ["tool_call", "tool_result"]
+    assert body["final_message"] == "Done"
+
+
+def test_no_proposal_response_includes_trace(client, monkeypatch):
+    from app.agent import AgentStep
+
+    result = AgentResult(proposal=None, trace=[AgentStep("message", None, None, "I can't decide")])
+    monkeypatch.setattr(main, "run_agent", lambda instruction, budget, **kw: result)
+    FakePayPal(monkeypatch, gadgethub_order())
+    body = start_purchase(client)
+    assert body["decision"] == "block"
+    assert body["trace"][0]["content"] == "I can't decide"
+
+
+def test_return_serves_html_to_browsers_and_json_otherwise(client, monkeypatch):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    FakePayPal(monkeypatch, gadgethub_order())
+    stub_verdict(monkeypatch, "allow")
+    start_purchase(client)
+    page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML)
+    assert page.headers["content-type"].startswith("text/html")
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    assert 'class="badge badge-allow">ALLOW<' in page.text
+    assert "Payment captured" in page.text
+    assert 'href="/"' in page.text
+    as_json = client.get("/paypal/return", params={"token": "ORD-GH"})
+    assert as_json.headers["content-type"].startswith("application/json")
+    assert as_json.json()["decision"] == "allow"
+
+
+def test_result_page_escapes_untrusted_text(client, monkeypatch):
+    # Seller text with a script tag, quoted back by the agent and by an AI finding
+    from app.firewall_ai import AIFinding
+    from app.firewall_rules import Finding
+
+    proposal = Proposal("gh-case-01", "gadgethub", Decimal("15.00"), f"Great case {XSS}")
+    monkeypatch.setattr(main, "run_agent", lambda instruction, budget, **kw: AgentResult(proposal=proposal))
+    FakePayPal(monkeypatch, gadgethub_order())
+    verdict = Verdict(
+        "hold",
+        [f'Hidden instructions found. Evidence: "{XSS}"'],
+        [Finding("budget", True, "ok")],
+        [AIFinding("page_injection[gadgethub]", True, f'Evidence: "{XSS}"', "llm_judge")],
+    )
+    monkeypatch.setattr(firewall_module, "evaluate", lambda *a: verdict)
+    start_purchase(client)
+    page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML).text
+
+    assert XSS not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+    # The only script element is our own external file
+    assert page.count("<script") == 1
+    assert '<script src="/static/result.js" defer></script>' in page
+
+
+def test_result_page_shows_hold_controls_until_resolved(client, monkeypatch):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    FakePayPal(monkeypatch, gadgethub_order())
+    stub_verdict(monkeypatch, "hold")
+    start_purchase(client)
+    page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML).text
+    assert 'class="badge badge-hold">HOLD<' in page
+    assert 'id="hold-controls"' in page
+    decision_id = client.get("/paypal/return", params={"token": "ORD-GH"}).json()["decision_id"]
+    client.post(f"/decisions/{decision_id}/reject")
+    page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML).text
+    assert 'id="hold-controls"' not in page
+    assert "You rejected the payment" in page

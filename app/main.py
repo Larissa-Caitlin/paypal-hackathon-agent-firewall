@@ -3,19 +3,32 @@ import json
 import os
 from dataclasses import asdict
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
 
 from app import audit, firewall, paypal_client
 from app.agent import Proposal, run_agent
 from app.catalog import get_product, list_shops
-from app.shop_pages import render_shop_page
+from app.result_page import render_result_page
+from app.shop_pages import page_text_for_agent, render_shop_page
 
 load_dotenv()
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+# HTML pages may only run scripts from our own origin: no inline scripts, so
+# even if untrusted text ever slipped through unescaped it could not execute.
+# Inline styles stay allowed because shop pages hide seller text with style="display:none".
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
 
 # Where PayPal sends the buyer back after approval; must be reachable by the browser
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -28,6 +41,15 @@ SCENARIOS = {
 }
 
 app = FastAPI(title="Agent Payment Firewall")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def content_security_policy(request: Request, call_next):
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    return response
 
 
 def require_demo_key(x_demo_key: str | None = Header(default=None)):
@@ -53,6 +75,11 @@ class PaymentProposal(BaseModel):
 class Verdict(BaseModel):
     decision: Literal["allow", "hold", "block"]
     reasons: list[str]
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
 
 
 @app.get("/health")
@@ -82,19 +109,46 @@ def shop_page(shop_key: str):
     return render_shop_page(shop_key)
 
 
+@app.get("/shops/{shop_key}/views")
+def shop_views(shop_key: str):
+    """A shop page as a human sees it (hidden text removed) and as a scraper reads it."""
+    if shop_key not in dict(list_shops()):
+        raise HTTPException(status_code=404, detail=f"Unknown shop: {shop_key}")
+    return {
+        "visible": page_text_for_agent(shop_key, include_hidden=False),
+        "full": page_text_for_agent(shop_key, include_hidden=True),
+    }
+
+
 class PurchaseRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=500)
     budget: Decimal = Field(gt=0, decimal_places=2)
     scenario: Literal["clean", "control", "poisoned"] = "poisoned"
 
+    @field_validator("budget")
+    @classmethod
+    def two_decimal_places(cls, v: Decimal) -> Decimal:
+        # Store all money in one format ("20" -> "20.00"); exact, since at most 2 places are allowed
+        return v.quantize(Decimal("0.01"))
 
-def _block_without_order(instruction, budget, proposal, reason, error_detail=None):
+
+def _agent_view(agent_result):
+    """The agent's trace and final message, for display (all of it is untrusted text)."""
+    if agent_result is None:
+        return {"trace": [], "final_message": None}
+    return {
+        "trace": [asdict(s) for s in agent_result.trace],
+        "final_message": agent_result.final_message,
+    }
+
+
+def _block_without_order(instruction, budget, proposal, reason, error_detail=None, agent_result=None):
     """Log a block for a purchase that never reached a PayPal authorization."""
     verdict = firewall.Verdict("block", [reason], [], [])
     decision_id = audit.log_decision(instruction, budget, proposal, None, verdict)
     if error_detail:
         audit.log_action(decision_id, "error", error_detail)
-    return {"decision_id": decision_id, "decision": "block", "reasons": [reason]}
+    return {"decision_id": decision_id, "decision": "block", "reasons": [reason], **_agent_view(agent_result)}
 
 
 def _settle(decision_id, shop_key, authorization_id, capture):
@@ -137,12 +191,21 @@ def purchase(req: PurchaseRequest):
             }
         )
         return _block_without_order(
-            req.instruction, req.budget, None, f"The shopping assistant failed: {type(e).__name__}", detail
+            req.instruction,
+            req.budget,
+            None,
+            f"The shopping assistant failed: {type(e).__name__}",
+            detail,
+            agent_result=partial,
         )
     proposal = result.proposal
     if proposal is None:
         return _block_without_order(
-            req.instruction, req.budget, None, "The shopping assistant did not choose a product"
+            req.instruction,
+            req.budget,
+            None,
+            "The shopping assistant did not choose a product",
+            agent_result=result,
         )
 
     product = get_product(proposal.product_id)
@@ -158,7 +221,11 @@ def purchase(req: PurchaseRequest):
         )
     except (ValueError, paypal_client.PayPalError) as e:
         return _block_without_order(
-            req.instruction, req.budget, proposal, f"Could not create a PayPal order: {type(e).__name__}"
+            req.instruction,
+            req.budget,
+            proposal,
+            f"Could not create a PayPal order: {type(e).__name__}",
+            agent_result=result,
         )
 
     purchase_id = audit.log_purchase(req.instruction, req.budget, result, order_id)
@@ -172,17 +239,28 @@ def purchase(req: PurchaseRequest):
             "amount": str(proposal.amount),
             "reason": proposal.reason,
         },
+        **_agent_view(result),
     }
 
 
+def _return_response(request, decision_id):
+    """HTML result page for browsers (PayPal's redirect), JSON for everything else."""
+    if "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(render_result_page(audit.get_decision_with_actions(decision_id)))
+    return _decision_response(decision_id)
+
+
 @app.get("/paypal/return")
-def paypal_return(token: str):
-    """After buyer approval: authorize, read the order back, run the firewall, settle."""
+def paypal_return(token: str, request: Request):
+    """After buyer approval: authorize, read the order back, run the firewall, settle.
+
+    Reachable only via the unguessable PayPal order token, never by decision id.
+    """
     order_id = token
     # Idempotent: a reload or replayed redirect returns the existing decision
     existing = audit.get_decision_id_by_order(order_id)
     if existing is not None:
-        return _decision_response(existing)
+        return _return_response(request, existing)
 
     row = audit.get_purchase_by_order(order_id)
     if row is None:
@@ -196,7 +274,7 @@ def paypal_return(token: str):
         verdict = firewall.Verdict("block", [f"PayPal could not hold the funds: {e.name}"], [], [])
         decision_id = audit.log_decision(instruction, budget, proposal, None, verdict)
         audit.log_action(decision_id, "error", f"Authorize failed: HTTP {e.status_code} {e.name} (debug_id={e.debug_id})")
-        return _decision_response(decision_id)
+        return _return_response(request, decision_id)
 
     # Funds are now held. Anything that stops the firewall from reaching a
     # verdict must release them (fail-safe block), never capture.
@@ -214,7 +292,7 @@ def paypal_return(token: str):
         _settle(decision_id, shop_key, auth.authorization_id, capture=False)
     else:
         audit.log_action(decision_id, "held", "Funds held; waiting for the user to approve or reject")
-    return _decision_response(decision_id)
+    return _return_response(request, decision_id)
 
 
 @app.get("/paypal/cancel")
