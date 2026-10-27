@@ -33,13 +33,14 @@ def get_client():
     return OpenAI(api_key=api_key, base_url=base_url, timeout=TIMEOUT, max_retries=0)
 
 
-def chat(messages, tools=None):
-    """Send a chat completion with LLM_MODEL and return the assistant message.
+def chat(messages, tools=None, model=None):
+    """Send a chat completion and return the assistant message.
 
-    Retries on HTTP 429 after 5s, 15s and 30s, then re-raises.
+    Uses LLM_MODEL unless model is given. Retries on HTTP 429 after 5s, 15s
+    and 30s, then re-raises.
     """
     client = get_client()
-    model = _env("LLM_MODEL")
+    model = model or _env("LLM_MODEL")
     kwargs = {"model": model, "messages": messages}
     if tools:
         kwargs["tools"] = tools

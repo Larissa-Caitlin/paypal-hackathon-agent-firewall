@@ -33,6 +33,14 @@ def _normalize(name):
     return name.lower().replace(" ", "")
 
 
+def _check_currency(order):
+    if order.currency == "USD":
+        return Finding("currency", True, "The payment is in US dollars")
+    return Finding(
+        "currency", False, f"The payment is in {order.currency}, not US dollars, so amounts can't be compared"
+    )
+
+
 def _check_budget(budget, order):
     if order.amount <= budget:
         return Finding("budget", True, f"${order.amount} is within the ${budget} budget")
@@ -98,6 +106,7 @@ def check_rules(budget: Decimal, proposal: Proposal, order: OrderInfo) -> list[F
     """Run every rule in order and return all findings, passed or failed."""
     product = get_product(proposal.product_id)
     return [
+        _check_currency(order),
         _check_budget(budget, order),
         _check_allowlist(proposal, order),
         _check_catalog(proposal, product),

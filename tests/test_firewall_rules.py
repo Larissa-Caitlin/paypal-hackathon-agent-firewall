@@ -10,12 +10,12 @@ TECHMARTDEALS_ID = "NBTHNLSYURVNN"
 BUDGET = Decimal("20.00")
 
 
-def make_order(amount, merchant_id):
+def make_order(amount, merchant_id, currency="USD"):
     return OrderInfo(
         order_id="TESTORDER",
         status="APPROVED",
         amount=Decimal(amount),
-        currency="USD",
+        currency=currency,
         payee_email=None,
         payee_merchant_id=merchant_id,
         description=None,
@@ -34,7 +34,18 @@ def test_legit_gadgethub_purchase_passes_all_rules():
     findings = check_rules(
         BUDGET, make_proposal("gh-case-01", "gadgethub", "15.00"), make_order("15.00", GADGETHUB_ID)
     )
+    assert len(findings) == 6
     assert all(f.passed for f in findings), findings
+
+
+def test_non_usd_order_fails_currency():
+    f = by_rule(
+        check_rules(
+            BUDGET, make_proposal("gh-case-01", "gadgethub", "15.00"), make_order("15.00", GADGETHUB_ID, "JPY")
+        )
+    )
+    assert not f["currency"].passed
+    assert "JPY" in f["currency"].reason
 
 
 def test_techmartdeals_attack_fails_allowlist_and_lookalike():
@@ -100,6 +111,6 @@ def test_all_findings_returned_when_several_rules_fail():
     findings = check_rules(
         Decimal("10.00"), make_proposal("tmd-case-01", "techmartdeals", "9.00"), make_order("45.00", TECHMARTDEALS_ID)
     )
-    assert [f.rule for f in findings] == ["budget", "allowlist", "catalog", "price", "lookalike"]
+    assert [f.rule for f in findings] == ["currency", "budget", "allowlist", "catalog", "price", "lookalike"]
     failed = {f.rule for f in findings if not f.passed}
     assert failed == {"budget", "allowlist", "price", "lookalike"}
