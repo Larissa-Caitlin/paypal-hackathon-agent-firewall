@@ -50,3 +50,78 @@ def test_control_scenario_text_collapses():
     # In the control scenario the agent itself reads the visible-only text
     visible = page_text_for_agent("techmartdeals", include_hidden=False)
     assert compare(visible, visible)["identical"] is True
+
+
+def run_helper(expression, payload):
+    """Evaluate an expression over the helper's exports with `input` bound to payload."""
+    script = (
+        f"const helpers = require({json.dumps(str(HELPER))});"
+        "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        f"process.stdout.write(JSON.stringify(({expression})));"
+    )
+    out = subprocess.run(
+        [NODE, "-e", script], input=json.dumps(payload), capture_output=True, text=True, check=True, timeout=30
+    )
+    return json.loads(out.stdout)
+
+
+SHOP_NAMES = {"techmart": "TechMart", "gadgethub": "GadgetHub", "techmartdeals": "TechMart Deals"}
+
+
+def step(step_type, name, arguments, content):
+    return {"step_type": step_type, "name": name, "arguments": arguments, "content": content}
+
+
+def summarize(trace):
+    return run_helper(
+        "helpers.summarizeTrace(input.trace, input.names).map(i => [i.sentence, i.shopKey || null, Boolean(i.failed)])",
+        {"trace": trace, "names": SHOP_NAMES},
+    )
+
+
+def test_trace_steps_become_human_sentences():
+    shops = json.dumps([{"shop_key": k, "shop_name": n} for k, n in SHOP_NAMES.items()])
+    args = {"product_id": "tmd-case-01", "shop_key": "techmartdeals", "amount": "12.00", "reason": "Cheap"}
+    trace = [
+        step("tool_call", "list_shops", {}, "{}"),
+        step("tool_result", "list_shops", None, shops),
+        step("tool_call", "read_shop_page", {"shop_key": "techmart"}, '{"shop_key": "techmart"}'),
+        step("tool_result", "read_shop_page", None, "TechMart page"),
+        step("tool_call", "read_shop_page", {"shop_key": "techmartdeals"}, '{"shop_key": "techmartdeals"}'),
+        step("tool_result", "read_shop_page", None, "Deals page"),
+        step("tool_call", "propose_payment", args, json.dumps(args)),
+        step("tool_result", "propose_payment", None, "Proposal recorded."),
+        step("message", None, None, "Done"),
+    ]
+    assert summarize(trace) == [
+        ["Listed 3 shops", None, False],
+        ["Read TechMart's page", "techmart", False],
+        ["Read TechMart Deals' page", "techmartdeals", False],
+        ["Proposed a payment to TechMart Deals for $12.00", None, False],
+        ["The agent said", None, False],
+    ]
+
+
+def test_trace_failed_and_unknown_steps():
+    trace = [
+        step("tool_call", "read_shop_page", {"shop_key": "evil"}, '{"shop_key": "evil"}'),
+        step("tool_result", "read_shop_page", None, "Error: unknown shop 'evil'."),
+        step("tool_call", "propose_payment", {"amount": "$9"}, "{}"),
+        step("tool_result", "propose_payment", None, "Error: propose_payment needs product_id"),
+        step("tool_call", "rm_rf", {}, "{}"),
+        step("tool_result", "rm_rf", None, "Error: unknown tool 'rm_rf'."),
+        step("error", "llm", None, "RateLimitError"),
+    ]
+    assert summarize(trace) == [
+        ['Tried to read "evil"\'s page, but it failed', None, True],
+        ["Tried to propose a payment, but it was refused", None, True],
+        ["Called an unknown tool: rm_rf", None, True],
+        ["Something went wrong", None, False],
+    ]
+
+
+def test_possessive():
+    assert run_helper("[helpers.possessive('TechMart'), helpers.possessive('TechMart Deals')]", {}) == [
+        "TechMart's",
+        "TechMart Deals'",
+    ]

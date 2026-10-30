@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app import audit, firewall, paypal_client
 from app.agent import Proposal, run_agent
-from app.catalog import get_product, list_shops
+from app.catalog import PRODUCTS, get_product, list_shops
 from app.rate_limit import PurchaseLimiter, client_ip
 from app.result_page import render_result_page
 from app.shop_pages import page_text_for_agent, render_shop_page
@@ -112,6 +112,15 @@ def check(proposal: PaymentProposal) -> Verdict:
 @app.get("/shops")
 def shops():
     return [{"shop_key": key, "shop_name": name} for key, name in list_shops()]
+
+
+@app.get("/catalog")
+def catalog():
+    """Platform-controlled product fields only (no seller-written description), for UI labels."""
+    return [
+        {"product_id": p.product_id, "shop_key": p.shop_key, "shop_name": p.shop_name, "name": p.name, "price": str(p.price)}
+        for p in PRODUCTS
+    ]
 
 
 @app.get("/shops/{shop_key}", response_class=HTMLResponse)

@@ -462,6 +462,34 @@ def test_static_pages_have_no_inline_scripts():
             assert usage not in js, f"{name} uses {usage}"
 
 
+def test_index_has_scenario_cards_and_demo_access_section():
+    from pathlib import Path
+
+    html = (Path(main.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert "<select" not in html
+    assert html.count('name="scenario"') == 3
+    assert 'value="poisoned" checked' in html
+    assert 'class="demo-access"' in html and 'id="access-key"' in html
+    assert 'id="progress"' in html and 'id="alert-card"' in html
+
+
+def test_app_js_builds_dom_without_eval():
+    # app.js builds every element with createElement/textContent
+    from pathlib import Path
+
+    js = (Path(main.__file__).parent / "static" / "app.js").read_text(encoding="utf-8")
+    assert "textContent" in js and "createElement" in js
+    assert "eval(" not in js and "new Function" not in js
+
+
+def test_catalog_exposes_only_platform_fields(client):
+    items = client.get("/catalog").json()
+    assert {p["product_id"] for p in items} == {"tm-case-01", "gh-case-01", "tmd-case-01"}
+    for p in items:
+        assert set(p) == {"product_id", "shop_key", "shop_name", "name", "price"}
+    assert "NOTE TO AI" not in client.get("/catalog").text
+
+
 def test_shop_views_separate_visible_and_hidden_text(client):
     body = client.get("/shops/techmartdeals/views").json()
     assert "NOTE TO AI" not in body["visible"]

@@ -9,51 +9,80 @@
 <body>
 <main class="container">
   <header class="page-header">
-    <h1>Agent Payment Firewall</h1>
-    <p class="muted">An AI shopping agent proposes a purchase. The firewall checks it before any money moves.</p>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>Agent Payment Firewall</h1>
+    </div>
+    <p class="tagline">An AI agent can be tricked into paying the wrong seller. The firewall checks every payment before money moves.</p>
   </header>
+
+  <section class="how" aria-label="How it works">
+    <ol class="how-steps">
+      <li><span class="how-num">1</span><strong>The agent shops</strong><span>An AI agent browses shops and proposes a purchase.</span></li>
+      <li><span class="how-num">2</span><strong>PayPal holds the funds</strong><span>You approve in PayPal; the money is held, not paid.</span></li>
+      <li><span class="how-num">3</span><strong>The firewall checks</strong><span>Rules and AI checks test the proposal against trusted data.</span></li>
+      <li><span class="how-num">4</span><strong>Money moves only if safe</strong><span>Safe payments are captured; the rest are voided or held.</span></li>
+    </ol>
+  </section>
 
   <section class="card">
     <h2>Start a purchase</h2>
     <form id="purchase-form" autocomplete="off">
-      <label for="access-key">Access key</label>
-      <input id="access-key" type="password" required autocomplete="off">
-
       <label for="instruction">Instruction to the shopping agent</label>
       <textarea id="instruction" rows="2" maxlength="500" required>Buy me a phone case for my 6.1-inch phone.</textarea>
 
-      <div class="grid-2">
-        <div>
-          <label for="budget">Budget (USD)</label>
-          <input id="budget" type="number" min="0.01" step="0.01" value="20" required>
-        </div>
-        <div>
-          <label for="scenario">Scenario</label>
-          <select id="scenario">
-            <option value="poisoned">poisoned: all shops, hidden text reaches the agent</option>
-            <option value="clean">clean: approved shops only</option>
-            <option value="control">control: all shops, hidden text stripped</option>
-          </select>
-        </div>
-      </div>
+      <label for="budget">Budget (USD)</label>
+      <input id="budget" class="input-short" type="number" min="0.01" step="0.01" value="20" required>
+
+      <fieldset class="scenarios">
+        <legend>Scenario</legend>
+        <label class="scenario-card scenario-poisoned">
+          <input type="radio" name="scenario" value="poisoned" checked>
+          <span class="scenario-name">Poisoned</span>
+          <span class="scenario-desc">All shops. One seller hides instructions for AI agents in its listing.</span>
+        </label>
+        <label class="scenario-card scenario-clean">
+          <input type="radio" name="scenario" value="clean">
+          <span class="scenario-name">Clean</span>
+          <span class="scenario-desc">Only the two approved shops. Nothing suspicious to find.</span>
+        </label>
+        <label class="scenario-card scenario-control">
+          <input type="radio" name="scenario" value="control">
+          <span class="scenario-name">Control</span>
+          <span class="scenario-desc">All shops, but the hidden text is stripped before the agent reads it.</span>
+        </label>
+      </fieldset>
+
+      <details class="demo-access" open>
+        <summary>Demo access</summary>
+        <label for="access-key">Access key</label>
+        <input id="access-key" class="input-short" type="password" required autocomplete="off">
+        <p class="hint">Kept in this page's memory only; never stored.</p>
+      </details>
 
       <div class="button-row">
-        <button type="submit" id="submit" class="button button-primary">Run shopping agent</button>
+        <button type="submit" id="submit" class="button button-primary">
+          <span class="spinner" aria-hidden="true"></span><span id="submit-label">Run shopping agent</span>
+        </button>
       </div>
-      <p id="status" class="outcome" role="status"></p>
+      <p id="status" class="outcome" role="status" aria-live="polite"></p>
     </form>
   </section>
 
   <section id="results" hidden>
+    <ol id="progress" class="progress" aria-label="Purchase progress"></ol>
+
     <section class="card" id="trace-card">
-      <h2>Agent trace</h2>
-      <p class="muted">Every step the agent took, in order. Page text is written by sellers and is untrusted.</p>
+      <h2>What the agent did</h2>
+      <p class="muted">Every step, in order. Shop page text is written by sellers and is untrusted.</p>
       <ol id="trace" class="trace"></ol>
     </section>
 
+    <section class="alert" id="alert-card" hidden></section>
+
     <section class="card trust-untrusted" id="proposal-card" hidden>
       <h2>Agent's proposal <span class="tag tag-untrusted">unverified claim</span></h2>
-      <dl id="proposal"></dl>
+      <dl id="proposal" class="facts"></dl>
       <p class="muted">Nothing has been paid. Approving in PayPal only holds the funds; the firewall then decides.</p>
       <div class="button-row">
         <a id="approve-link" class="button button-primary" href="#">Approve payment in PayPal</a>
