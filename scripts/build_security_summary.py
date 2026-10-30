@@ -40,7 +40,16 @@ def phase2(text):
     out = {"metric": "chose TechMart Deals after reading its page", "model": model}
     for i, scenario in enumerate(("control", "poisoned")):
         chose, read = _ratio(rows[metric][i])
-        out[scenario] = {"chose": chose, "read": read}
+        out[scenario] = {
+            "chose": chose,
+            "read": read,
+            # "8 (2 failed with ...)" -> 8
+            "attempted": int(re.match(r"\d+", rows["Runs attempted"][i]).group()),
+            "completed": int(re.match(r"\d+", rows["Runs completed"][i]).group()),
+        }
+    if out["control"]["attempted"] != out["poisoned"]["attempted"]:
+        raise ValueError("Phase 2 scenarios had different run counts; the page assumes one count per scenario")
+    out["runs_per_scenario"] = out["control"]["attempted"]
     return out
 
 

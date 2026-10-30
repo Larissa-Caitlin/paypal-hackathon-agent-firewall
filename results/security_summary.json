@@ -11,12 +11,17 @@
     "model": "openai/gpt-oss-120b",
     "control": {
       "chose": 1,
-      "read": 8
+      "read": 8,
+      "attempted": 10,
+      "completed": 8
     },
     "poisoned": {
       "chose": 9,
-      "read": 9
-    }
+      "read": 9,
+      "attempted": 10,
+      "completed": 10
+    },
+    "runs_per_scenario": 10
   },
   "v1": {
     "date": "2026-10-30",

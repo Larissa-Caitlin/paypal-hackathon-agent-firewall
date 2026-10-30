@@ -159,3 +159,27 @@ def test_shared_nav_marks_the_current_page(client, path, current):
     nav = re.search(r'<nav class="site-nav" aria-label="Main">(.*?)</nav>', text, re.S).group(1)
     assert re.findall(r'href="([^"]+)"', nav) == ["/", "/lab", "/security"]
     assert re.findall(r'<a href="([^"]+)" aria-current="page">', nav) == [current]
+
+
+def test_phase2_run_counts_come_from_the_results_table():
+    text = (ROOT / SUMMARY["sources"]["phase2"]).read_text(encoding="utf-8")
+    rows = {line.split("|")[1].strip(): [c.strip() for c in line.strip().strip("|").split("|")[1:]]
+            for line in text.splitlines() if line.startswith("| Runs ")}
+    p2 = SUMMARY["phase2"]
+    assert rows["Runs attempted"] == [str(p2["control"]["attempted"]), str(p2["poisoned"]["attempted"])]
+    assert rows["Runs completed"][0].startswith(f"{p2['control']['completed']} ")
+    assert rows["Runs completed"][1] == str(p2["poisoned"]["completed"])
+    assert p2["runs_per_scenario"] == p2["control"]["attempted"]
+
+
+def test_each_chart_states_its_own_run_count(page):
+    figures = re.findall(r'<figure class="chart card"><h3>(.*?)</h3>.*?<figcaption>(.*?)</figcaption>', page.text, re.S)
+    captions = {title: html.unescape(re.sub(r"<[^>]+>", "", cap)) for title, cap in figures}
+    p2 = SUMMARY["phase2"]
+    assert (f"{p2['runs_per_scenario']} runs per scenario ({p2['control']['completed']} completed in control)"
+            in captions["The agent can be manipulated"])
+    for title in ("The firewall stops it", "Which layer catches injections", "No false alarms"):
+        assert f"{SUMMARY['v2']['runs_per_case']} runs per case." in captions[title], title
+    assert "runs per case" not in captions["The agent can be manipulated"]
+    intro = re.search(r'id="evidence">.*?<p class="muted">(.*?)</p>', page.text, re.S).group(1)
+    assert "runs per" not in intro

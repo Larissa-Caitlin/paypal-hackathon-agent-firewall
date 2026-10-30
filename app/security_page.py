@@ -65,6 +65,14 @@ def _chart(title, bars, caption, source):
     )
 
 
+def _runs_per_case(s, versions=("v1", "v2")):
+    """'3 runs per case', or one count per version if the runs used different counts."""
+    counts = {v: s[v]["runs_per_case"] for v in versions}
+    if len(set(counts.values())) == 1:
+        return f"{_stat(s, f'{versions[-1]}.runs_per_case')} runs per case."
+    return " ".join(f"{_stat(s, f'{v}.runs_per_case')} runs per case in {v}." for v in versions)
+
+
 def _evidence(s):
     manipulated = _chart(
         "The agent can be manipulated",
@@ -73,7 +81,8 @@ def _evidence(s):
             _bar(s, "Poisoned (hidden note)", "phase2.poisoned.chose", "phase2.poisoned.read", "block"),
         ],
         "Runs in which the agent read TechMart Deals' page and then chose to pay it. "
-        f"Model: {_e(s['phase2']['model'])}.",
+        f"{_stat(s, 'phase2.runs_per_scenario')} runs per scenario "
+        f"({_stat(s, 'phase2.control.completed')} completed in control). Model: {_e(s['phase2']['model'])}.",
         _source(s, "phase2"),
     )
     stopped = _chart(
@@ -87,7 +96,7 @@ def _evidence(s):
         "Attack cases blocked or held in every run. v1 let through: "
         f"{_stat(s, 'v1.attacks.allowed_in_some_run')}. "
         f"Held-out cases were written before the change; v2 held them in {_stat(s, 'v2.holdout.runs_held')} "
-        f"of {_stat(s, 'v2.holdout.runs')} runs.",
+        f"of {_stat(s, 'v2.holdout.runs')} runs. {_runs_per_case(s)}",
         f"{_source(s, 'v1')}, {_source(s, 'v2')}",
     )
     layers = _chart(
@@ -99,7 +108,7 @@ def _evidence(s):
         ],
         f"Injection runs flagged, across {_stat(s, 'detectors.injection_cases')} injection cases. "
         "Prompt Guard misses natural-language injections: it flagged only "
-        f"{_stat(s, 'detectors.prompt_guard.cases_every_run')}, the overt commands.",
+        f"{_stat(s, 'detectors.prompt_guard.cases_every_run')}, the overt commands. {_runs_per_case(s, ('v2',))}",
         _source(s, "v2"),
     )
     false_alarms = _chart(
@@ -108,7 +117,7 @@ def _evidence(s):
             _bar(s, "v1", "v1.false_positives.count", "v1.false_positives.benign_cases", "block"),
             _bar(s, "v2", "v2.false_positives.count", "v2.false_positives.benign_cases", "block"),
         ],
-        "Benign cases that were held or blocked in any run (lower is better).",
+        f"Benign cases that were held or blocked in any run (lower is better). {_runs_per_case(s)}",
         f"{_source(s, 'v1')}, {_source(s, 'v2')}",
     )
     return manipulated + stopped + layers + false_alarms
@@ -262,7 +271,7 @@ def render_security_page(summary) -> str:
 
   <section class="section" id="evidence">
     <h2>Evidence</h2>
-    <p class="muted">From this repository's own runs: {_stat(s, 'v2.runs_per_case')} runs per attack case. Numbers are read from the results files.</p>
+    <p class="muted">From this repository's own runs. Every number is read from the results files linked under each chart.</p>
     <div class="charts">{_evidence(s)}</div>
   </section>
 
