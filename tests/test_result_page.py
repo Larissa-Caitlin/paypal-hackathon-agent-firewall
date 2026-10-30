@@ -231,3 +231,10 @@ def test_second_opinion_judges_have_plain_names():
     assert "<td>LLM judge B (content moderator)</td>" in page
     groups = ai_groups(page)
     assert groups == [("page_injection[techmart]", True, "FLAGGED TechMart's page: 1 of 2 flagged")]
+
+
+def test_result_page_has_shared_nav_with_demo_current():
+    page = render_result_page(make_row())
+    nav = re.search(r'<nav class="site-nav" aria-label="Main">(.*?)</nav>', page, re.S).group(1)
+    assert re.findall(r'<a href="([^"]+)" aria-current="page">', nav) == ["/"]
+    assert 'href="/security"' in nav and 'href="/lab"' in nav

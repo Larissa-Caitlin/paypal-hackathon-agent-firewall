@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from html import escape
 
 from app.catalog import get_product, list_shops
+from app.page_chrome import site_header
 from app.policy import ALLOWED_MERCHANTS
 
 VERDICT_LABELS = {"allow": "ALLOW", "block": "BLOCK", "hold": "HOLD"}
@@ -291,11 +292,9 @@ def render_result_page(row) -> str:
 </head>
 <body>
 <main class="container">
+  {site_header("demo")}
   <header class="page-header">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <h1>Agent Payment Firewall</h1>
-    </div>
+    <h1 class="page-title">Firewall verdict</h1>
     <a class="link" href="/">&larr; Start a new purchase</a>
   </header>
 

@@ -18,6 +18,7 @@ from app.catalog import PRODUCTS, get_product, list_shops
 from app.lab import run_lab
 from app.rate_limit import PurchaseLimiter, client_ip
 from app.result_page import render_result_page
+from app.security_page import load_summary, render_security_page
 from app.shop_pages import page_text_for_agent, render_shop_page
 
 load_dotenv()
@@ -100,6 +101,16 @@ class Verdict(BaseModel):
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+
+# Built once at startup from results/security_summary.json; the page is static after that
+SECURITY_PAGE = render_security_page(load_summary())
+
+
+@app.get("/security", include_in_schema=False, response_class=HTMLResponse)
+def security_page():
+    """Public page: layered defence, evidence and limitations. No access key needed."""
+    return SECURITY_PAGE
 
 
 @app.get("/lab", include_in_schema=False)
