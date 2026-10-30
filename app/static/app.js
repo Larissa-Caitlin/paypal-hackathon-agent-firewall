@@ -30,11 +30,11 @@
 
   // Cosmetic only: the server does not report progress while the agent runs.
   const LOADING_STEPS = [
-    "Agent is browsing shops...",
-    "Agent is reading shop pages...",
-    "Agent is comparing products and prices...",
-    "Agent is preparing its proposal...",
-    "Still working. This can take up to a minute...",
+    "The agent is looking at the shops...",
+    "The agent is reading the shop pages...",
+    "The agent is comparing products and prices...",
+    "The agent is choosing what to buy...",
+    "Still working. This can take up to a minute.",
   ];
 
   // Platform catalog (trusted) for labels: shop key -> name, product id -> product
@@ -110,8 +110,8 @@
     const product = Object.prototype.hasOwnProperty.call(products, proposal.product_id) ? products[proposal.product_id] : null;
     factRow("Shop", known ? shopNames[proposal.shop_key] : "Unknown shop", proposal.shop_key);
     factRow("Product", product ? product.name : "Unknown product", proposal.product_id);
-    factRow("Claimed price", "$" + proposal.amount);
-    factRow("Agent's reason", proposal.reason);
+    factRow("Price it claims", "$" + proposal.amount);
+    factRow("Its reason", proposal.reason);
     // Only follow links to PayPal; anything else is refused.
     let url = null;
     try {
@@ -140,7 +140,7 @@
     let i = 0;
     submitBtn.disabled = true;
     submitBtn.classList.add("loading");
-    submitLabel.textContent = "Agent is running";
+    submitLabel.textContent = "The agent is shopping...";
     setStatus(LOADING_STEPS[0]);
     const timer = setInterval(function () {
       i = Math.min(i + 1, LOADING_STEPS.length - 1);
@@ -150,7 +150,7 @@
       clearInterval(timer);
       submitBtn.disabled = false;
       submitBtn.classList.remove("loading");
-      submitLabel.textContent = "Run shopping agent";
+      submitLabel.textContent = "Run the shopping agent";
     };
   }
 
@@ -183,7 +183,7 @@
     // Read at submit time, so a pasted or autofilled key is always the current one
     accessKey = cleanKey(document.getElementById("access-key").value);
     if (!accessKey) {
-      setStatus("Enter the access key.", true);
+      setStatus("Enter the access key under Demo access, then try again.", true);
       return;
     }
     const scenario = form.querySelector('input[name="scenario"]:checked');
@@ -218,14 +218,14 @@
       if (data.approve_url && data.proposal) {
         renderProgress(1);
         renderProposal(data.proposal, data.approve_url);
-        setStatus("The agent made a proposal. Review it, then approve in PayPal.");
+        setStatus("The agent has chosen. Check its proposal below, then approve in PayPal.");
       } else {
         renderProgress(4, [1, 2, 3], { label: "Blocked", verdict: "block" });
         renderBlocked(data.reasons);
         setStatus("");
       }
     } catch (e) {
-      setStatus("Could not display the agent's result.", true);
+      setStatus("The agent finished, but its result could not be shown. Reload the page and try again.", true);
     }
   });
 })();

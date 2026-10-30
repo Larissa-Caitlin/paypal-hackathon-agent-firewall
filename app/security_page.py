@@ -118,7 +118,7 @@ def _diagram():
     return """
   <div class="defence" role="img" aria-label="Layered defence: the user's instruction is trusted; shop pages and the agent are untrusted and the agent can only propose; PayPal authorizes and holds the funds and its order is the trusted record; rules can block; AI checks can only escalate to hold; the result is capture, hold or void.">
     <div class="node node-trusted">
-      <span class="tag tag-trusted">trusted</span>
+      <span class="tag tag-trusted">Trusted</span>
       <strong>User instruction and budget</strong>
       <span>What to buy and the most to spend.</span>
     </div>
@@ -126,20 +126,20 @@ def _diagram():
     <div class="zone zone-untrusted">
       <span class="zone-label">Untrusted: anything here may be written by an attacker</span>
       <div class="node node-untrusted">
-        <span class="tag tag-untrusted">untrusted</span>
+        <span class="tag tag-untrusted">Untrusted</span>
         <strong>Agent reads shop pages</strong>
         <span>Seller-written text, which can hide instructions for AI agents.</span>
       </div>
       <div class="flow-arrow" aria-hidden="true"></div>
       <div class="node node-untrusted">
-        <span class="tag tag-untrusted">unverified claim</span>
+        <span class="tag tag-untrusted">Unverified claim</span>
         <strong>Agent proposes only</strong>
         <span>Shop, product, amount and reason. No PayPal access.</span>
       </div>
     </div>
     <div class="trust-boundary" aria-hidden="true"><span>Trust boundary: claims above are checked, never believed</span></div>
     <div class="node node-paypal">
-      <span class="tag tag-trusted">trusted record</span>
+      <span class="tag tag-trusted">Trusted record</span>
       <strong>PayPal AUTHORIZE: funds held</strong>
       <span>The buyer approves; nothing is captured yet. The order is read back from PayPal: amount, currency and payee.</span>
     </div>
@@ -147,13 +147,13 @@ def _diagram():
     <div class="zone zone-firewall">
       <span class="zone-label">Firewall</span>
       <div class="node node-rules">
-        <span class="tag tag-trusted">deterministic &middot; can block</span>
+        <span class="tag tag-trusted">Deterministic, can block</span>
         <strong>Rules</strong>
         <span class="chips"><span>currency</span><span>budget</span><span>allowlist</span><span>catalog</span><span>price</span><span>lookalike</span></span>
       </div>
       <div class="flow-arrow" aria-hidden="true"></div>
       <div class="node node-ai">
-        <span class="tag tag-ai">AI &middot; can only escalate to hold</span>
+        <span class="tag tag-ai">AI, can only escalate to hold</span>
         <strong>AI checks</strong>
         <span class="chips"><span>Prompt Guard</span><span>Judge A</span><span>Judge B</span><span>Intent</span></span>
       </div>
@@ -197,7 +197,7 @@ DECISIONS = [
 
 def _decisions():
     return "".join(
-        f'<article class="decision card"><h3>{_e(title)}</h3><p>{_e(text)}</p></article>' for title, text in DECISIONS
+        f'<article class="decision"><h3>{_e(title)}</h3><p>{_e(text)}</p></article>' for title, text in DECISIONS
     )
 
 
@@ -238,7 +238,7 @@ def render_security_page(summary) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security · Agent Payment Firewall</title>
+  <title>Security: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -249,8 +249,8 @@ def render_security_page(summary) -> str:
     <h1 class="page-title">The threat: text an AI agent reads can steer what it pays for.</h1>
     <p class="tagline">A seller can hide instructions in a product listing. A human never sees them; an AI shopping agent reads them and may pay the wrong merchant. This firewall checks the agent's decision against trusted data before any money moves.</p>
     <div class="button-row">
-      <a class="button button-primary" href="/lab">Try the Attack Lab</a>
-      <a class="button button-secondary" href="{REPO_URL}">View the code on GitHub</a>
+      <a class="button button-primary" href="/lab">Try an attack yourself</a>
+      <a class="button button-secondary" href="{REPO_URL}">Read the code on GitHub</a>
     </div>
   </section>
 
@@ -273,7 +273,7 @@ def render_security_page(summary) -> str:
 
   <section class="section" id="limitations">
     <h2>Known limitations</h2>
-    <ul class="limitations card">{_limitations(s)}</ul>
+    <ul class="limitations">{_limitations(s)}</ul>
   </section>
 </main>
 </body>

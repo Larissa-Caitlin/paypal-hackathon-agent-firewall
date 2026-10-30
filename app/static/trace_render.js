@@ -50,15 +50,15 @@ const TraceRender = (function () {
     const grid = el("div", "views");
 
     const human = el("div", "view");
-    human.appendChild(el("div", "view-title", "What a human sees"));
+    human.appendChild(el("div", "view-title", "What a person sees"));
     human.appendChild(preText(visibleText));
 
     const agent = el("div", "view view-untrusted");
     const agentTitle = el("div", "view-title", "What the agent read");
-    agentTitle.appendChild(el("span", "tag tag-untrusted", "untrusted"));
+    agentTitle.appendChild(el("span", "tag tag-untrusted", "Untrusted"));
     agent.appendChild(agentTitle);
     agent.appendChild(highlightedAgentText(comparison.lines));
-    agent.appendChild(el("p", "injected-note", "Highlighted text is hidden from humans but was read by the agent."));
+    agent.appendChild(el("p", "injected-note", "The highlighted text is hidden from people. The agent read it."));
 
     grid.appendChild(human);
     grid.appendChild(agent);
@@ -133,7 +133,7 @@ const TraceRender = (function () {
       found.lines.forEach(function (line) { quote.appendChild(el("p", null, line)); });
       alertEl.appendChild(quote);
     });
-    alertEl.appendChild(el("p", "alert-note", "A human visiting this page would not see this."));
+    alertEl.appendChild(el("p", "alert-note", "A person visiting this page would not see this."));
     alertEl.hidden = hiddenFound.length === 0;
   }
 
@@ -165,7 +165,7 @@ const TraceRender = (function () {
       return;
     }
     container.appendChild(findingsTable(rules.map(function (f) {
-      return [{ node: status(f.passed, "PASS", "FAIL") }, { text: f.rule, className: "mono" }, { text: f.reason }];
+      return [{ node: status(f.passed, "Pass", "Fail") }, { text: f.rule, className: "mono" }, { text: f.reason }];
     })));
   }
 
@@ -182,13 +182,13 @@ const TraceRender = (function () {
       const details = el("details", "ai-group " + (flagged ? "ai-group-flagged" : "ai-group-ok"));
       details.open = flagged > 0;
       const summary = el("summary");
-      summary.appendChild(status(!flagged, "OK", "FLAGGED"));
+      summary.appendChild(status(!flagged, "OK", "Flagged"));
       summary.appendChild(document.createTextNode(
         " " + title + (flagged ? ": " + flagged + " of " + group.findings.length + " flagged" : ": no issues found")
       ));
       details.appendChild(summary);
       details.appendChild(findingsTable(group.findings.map(function (f) {
-        return [{ node: status(!f.flagged, "OK", "FLAGGED") }, { text: detectorLabel(f.detector) }, { text: f.reason }];
+        return [{ node: status(!f.flagged, "OK", "Flagged") }, { text: detectorLabel(f.detector) }, { text: f.reason }];
       })));
       container.appendChild(details);
     });

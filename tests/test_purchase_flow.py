@@ -446,6 +446,9 @@ def test_index_and_static_files_served_with_csp(client):
         ("/static/status_messages.js", "javascript"),
         ("/static/trace_render.js", "javascript"),
         ("/static/lab.js", "javascript"),
+        ("/static/hero.js", "javascript"),
+        ("/static/fonts/ibm-plex-sans-latin-400-normal.woff2", "font/woff2"),
+        ("/static/fonts/ibm-plex-mono-latin-400-normal.woff2", "font/woff2"),
         ("/lab", "text/html"),
     ]:
         r = client.get(path)
@@ -458,10 +461,11 @@ def test_static_pages_have_no_inline_scripts():
 
     static = Path(main.__file__).parent / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
-    assert html.count("<script") == 4
-    assert 'src="/static/trace_view.js"' in html and 'src="/static/app.js"' in html
-    assert 'src="/static/status_messages.js"' in html and 'src="/static/trace_render.js"' in html
-    for name in ("app.js", "result.js", "trace_view.js", "status_messages.js", "trace_render.js", "lab.js"):
+    srcs = ["status_messages.js", "trace_view.js", "trace_render.js", "hero.js", "app.js"]
+    assert html.count("<script") == len(srcs)
+    for src in srcs:
+        assert f'<script src="/static/{src}" defer></script>' in html
+    for name in ("app.js", "result.js", "trace_view.js", "status_messages.js", "trace_render.js", "lab.js", "hero.js"):
         js = (static / name).read_text(encoding="utf-8")
         for usage in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write", "localStorage.", "sessionStorage.", "document.cookie"):
             assert usage not in js, f"{name} uses {usage}"
@@ -549,8 +553,8 @@ def test_return_serves_html_to_browsers_and_json_otherwise(client, monkeypatch):
     page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML)
     assert page.headers["content-type"].startswith("text/html")
     assert "script-src 'self'" in page.headers["content-security-policy"]
-    assert 'class="badge badge-allow">ALLOW<' in page.text
-    assert "Payment captured" in page.text
+    assert 'class="badge badge-allow">Allowed<' in page.text
+    assert "Payment sent" in page.text
     assert 'href="/"' in page.text
     as_json = client.get("/paypal/return", params={"token": "ORD-GH"})
     assert as_json.headers["content-type"].startswith("application/json")
@@ -589,7 +593,7 @@ def test_result_page_shows_hold_controls_until_resolved(client, monkeypatch):
     stub_verdict(monkeypatch, "hold")
     start_purchase(client)
     page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML).text
-    assert 'class="badge badge-hold">HOLD<' in page
+    assert 'class="badge badge-hold">Held<' in page
     assert 'id="hold-controls"' in page
     decision_id = client.get("/paypal/return", params={"token": "ORD-GH"}).json()["decision_id"]
     client.post(f"/decisions/{decision_id}/reject")

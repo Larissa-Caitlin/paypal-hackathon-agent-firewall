@@ -58,24 +58,24 @@ def click(action="approve", key="secret", status=200, body=None):
 def test_key_is_trimmed_at_click_time():
     result = click(key="  secret \n", body={"actions": [{"action": "captured"}]})
     assert result["requests"] == [{"url": "/decisions/7/approve", "key": "secret"}]
-    assert result["outcome"] == "Payment captured."
+    assert result["outcome"] == "Done. The payment went through."
 
 
 def test_blank_key_sends_nothing():
     result = click(key="   ")
     assert result["requests"] == []
-    assert result["outcome"] == "Enter the access key first."
+    assert result["outcome"] == "Enter the access key, then choose again."
 
 
 @pytest.mark.parametrize(
     "status, body, message, retry",
     [
-        (401, {"detail": "Missing or invalid X-Demo-Key header"}, "The access key is wrong.", True),
+        (401, {"detail": "Missing or invalid X-Demo-Key header"}, "That access key didn't work. Check it and try again.", True),
         (429, {"detail": "Rate limit reached"}, "Rate limit reached", True),
-        (503, {"detail": "no access key is configured"}, "Demo access isn't configured on the server.", True),
+        (503, {"detail": "no access key is configured"}, "Demo access isn't set up on this server, so purchases are turned off.", True),
         (502, {}, WAKING_UP, True),
         (0, {}, WAKING_UP, True),
-        (409, {"detail": "This payment has already been resolved"}, "Something went wrong (HTTP 409).", False),
+        (409, {"detail": "This payment has already been resolved"}, "Something went wrong on the server (HTTP 409). Try again in a moment.", False),
     ],
 )
 def test_errors_use_shared_status_messages(status, body, message, retry):

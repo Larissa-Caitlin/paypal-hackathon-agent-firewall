@@ -13,9 +13,9 @@
   const outcome = document.getElementById("hold-outcome");
 
   const LABELS = {
-    captured: "Payment captured.",
-    voided: "Payment rejected. The held funds were released.",
-    error: "PayPal reported an error; see the audit log.",
+    captured: "Done. The payment went through.",
+    voided: "Done. The payment was cancelled and the held money released.",
+    error: "PayPal reported an error, so nothing changed. It is recorded in the audit log.",
   };
   // Failures where trying again can help; anything else leaves the buttons disabled
   const RETRYABLE = [0, 401, 429, 502, 503, 504];
@@ -53,12 +53,12 @@
   async function resolve(action) {
     const key = cleanKey(keyInput.value);
     if (!key) {
-      show("Enter the access key first.", true);
+      show("Enter the access key, then choose again.", true);
       keyInput.focus();
       return;
     }
     setDisabled(true);
-    show(action === "approve" ? "Capturing payment..." : "Releasing funds...");
+    show(action === "approve" ? "Sending the payment..." : "Releasing the held money...");
     const response = await post(action, key);
     if (response.status !== 200) {
       show(errorMessage(response.status, response.data.detail), true);

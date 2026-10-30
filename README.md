@@ -278,10 +278,10 @@ On Windows without long path support, clone into a short path (for example `C:\s
 
 ### Walk through a poisoned purchase
 
-1. Open http://127.0.0.1:8000, enter the access key, keep the default instruction and budget, and choose the **poisoned** scenario.
-2. Run the agent. The trace shows each shop page twice: what a human sees and what the agent read, with the hidden note highlighted. The agent usually proposes TechMart Deals' $12 case.
-3. Click **Approve payment in PayPal** and log in as the sandbox buyer.
-4. PayPal redirects back to `/paypal/return`. The funds are authorized, the firewall runs, and the result page shows **BLOCK**: TechMart Deals is not an approved shop and its name imitates TechMart. The authorization is voided.
+1. Open http://127.0.0.1:8000. Turn on **View as the agent** on the TechMart Deals listing to see the hidden note. Then enter the access key, keep the default instruction and budget, and choose the **Poisoned** scenario.
+2. Click **Run the shopping agent**. The trace shows each shop page twice: what a person sees and what the agent read, with the hidden note highlighted. The agent usually proposes TechMart Deals' $12 case.
+3. Click **Approve in PayPal** and log in as the sandbox buyer.
+4. PayPal redirects back to `/paypal/return`. The funds are authorized, the firewall runs, and the result page shows **Blocked**: TechMart Deals is not an approved shop and its name imitates TechMart. The authorization is voided.
 
 ## Scripts
 
@@ -328,6 +328,8 @@ Built for the PayPal AI Hackathon, during the submission period.
 ### Credits
 
 **Built with Llama.** The injection classifier is Llama Prompt Guard 2 (86M) by Meta, called via Groq. See the [model card](https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M); it is licensed under the [Llama 4 Community License](https://www.llama.com/llama4/license/).
+
+The interface design (palette, type, the agent's-eye listing) is described in [docs/design.md](docs/design.md). Fonts: IBM Plex Sans and IBM Plex Mono, self-hosted under the SIL Open Font License (licence files in `app/static/fonts/`).
 
 ## License
 

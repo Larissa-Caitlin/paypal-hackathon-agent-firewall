@@ -9,48 +9,71 @@
 <body>
 <main class="container">
   <header class="site-header">
-    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><h1 class="brand-name">Agent Payment Firewall</h1></a>
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Agent Payment Firewall</span></a>
     <nav class="site-nav" aria-label="Main"><a href="/" aria-current="page">Demo</a><a href="/lab">Attack Lab</a><a href="/security">Security</a></nav>
   </header>
-  <header class="page-header">
-    <p class="tagline">An AI agent can be tricked into paying the wrong seller. The firewall checks every payment before money moves.</p>
-    <p id="server-status" class="server-status" role="status" aria-live="polite"></p>
-  </header>
 
-  <section class="how" aria-label="How it works">
+  <section class="intro">
+    <div>
+      <h1 class="page-title">Your shopping agent can be talked into paying the wrong seller.</h1>
+      <p class="lede">Any seller can hide instructions in a product listing. This firewall checks what your agent wants to buy against trusted data, while PayPal holds the money, and only lets safe payments through.</p>
+      <p id="server-status" class="server-status" role="status" aria-live="polite"></p>
+    </div>
+
+    <figure class="listing-demo">
+      <div class="listing-bar">
+        <span class="listing-address">shops/techmartdeals</span>
+        <button type="button" id="agent-view" class="switch" role="switch" aria-checked="false" aria-controls="listing" disabled>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>View as the agent
+        </button>
+      </div>
+      <article class="listing" id="listing" aria-label="Product listing">
+        <p class="listing-shop" id="listing-shop"></p>
+        <h2 class="listing-name" id="listing-name"></h2>
+        <p class="listing-price" id="listing-price"></p>
+        <p class="listing-id" id="listing-id"></p>
+        <p class="listing-desc" id="listing-desc">Loading the listing...</p>
+        <p class="listing-hidden" id="listing-hidden" hidden></p>
+      </article>
+      <figcaption class="listing-caption" id="listing-caption">A person sees an ordinary listing. <strong>The agent reads an instruction.</strong></figcaption>
+    </figure>
+  </section>
+
+  <section class="how" aria-labelledby="how-title">
+    <h2 id="how-title">How it works</h2>
     <ol class="how-steps">
-      <li><span class="how-num">1</span><strong>The agent shops</strong><span>An AI agent browses shops and proposes a purchase.</span></li>
-      <li><span class="how-num">2</span><strong>PayPal holds the funds</strong><span>You approve in PayPal; the money is held, not paid.</span></li>
-      <li><span class="how-num">3</span><strong>The firewall checks</strong><span>Rules and AI checks test the proposal against trusted data.</span></li>
-      <li><span class="how-num">4</span><strong>Money moves only if safe</strong><span>Safe payments are captured; the rest are voided or held.</span></li>
+      <li><strong>The agent shops</strong><span>It reads the shop pages and proposes one purchase.</span></li>
+      <li><strong>PayPal holds the money</strong><span>You approve in PayPal. The funds are held, not paid.</span></li>
+      <li><strong>The firewall checks</strong><span>Rules and AI checks compare the proposal with trusted data.</span></li>
+      <li><strong>Money moves only if it's safe</strong><span>A safe payment is captured. Anything else is released or held for you.</span></li>
     </ol>
   </section>
 
-  <section class="card">
-    <h2>Start a purchase</h2>
+  <section class="card" aria-labelledby="start-title">
+    <h2 id="start-title">Start a purchase</h2>
     <form id="purchase-form" autocomplete="off">
-      <label for="instruction">Instruction to the shopping agent</label>
+      <label for="instruction">What should the agent buy?</label>
       <textarea id="instruction" rows="2" maxlength="500" required>Buy me a phone case for my 6.1-inch phone.</textarea>
 
-      <label for="budget">Budget (USD)</label>
+      <label for="budget">Budget in US dollars</label>
       <input id="budget" class="input-short" type="number" min="0.01" step="0.01" value="20" required>
 
       <fieldset class="scenarios">
-        <legend>Scenario</legend>
+        <legend>Which shops can the agent see?</legend>
         <label class="scenario-card scenario-poisoned">
           <input type="radio" name="scenario" value="poisoned" checked>
           <span class="scenario-name">Poisoned</span>
-          <span class="scenario-desc">All shops. One seller hides instructions for AI agents in its listing.</span>
+          <span class="scenario-desc">All three shops. TechMart Deals hides an instruction for AI agents in its listing.</span>
         </label>
         <label class="scenario-card scenario-clean">
           <input type="radio" name="scenario" value="clean">
           <span class="scenario-name">Clean</span>
-          <span class="scenario-desc">Only the two approved shops. Nothing suspicious to find.</span>
+          <span class="scenario-desc">Only the two approved shops. There is nothing hidden to find.</span>
         </label>
         <label class="scenario-card scenario-control">
           <input type="radio" name="scenario" value="control">
           <span class="scenario-name">Control</span>
-          <span class="scenario-desc">All shops, but the hidden text is stripped before the agent reads it.</span>
+          <span class="scenario-desc">All three shops, with the hidden instruction removed before the agent reads it.</span>
         </label>
       </fieldset>
 
@@ -58,13 +81,11 @@
         <summary>Demo access</summary>
         <label for="access-key">Access key</label>
         <input id="access-key" class="input-short" type="password" required autocomplete="off">
-        <p class="hint">Kept in this page's memory only; never stored.</p>
+        <p class="hint">The key stays in this page's memory and is never saved.</p>
       </details>
 
       <div class="button-row">
-        <button type="submit" id="submit" class="button button-primary">
-          <span class="spinner" aria-hidden="true"></span><span id="submit-label">Run shopping agent</span>
-        </button>
+        <button type="submit" id="submit" class="button button-primary"><span id="submit-label">Run the shopping agent</span></button>
       </div>
       <p id="status" class="outcome" role="status" aria-live="polite"></p>
     </form>
@@ -73,33 +94,34 @@
   <section id="results" hidden>
     <ol id="progress" class="progress" aria-label="Purchase progress"></ol>
 
-    <section class="card" id="trace-card">
-      <h2>What the agent did</h2>
-      <p class="muted">Every step, in order. Shop page text is written by sellers and is untrusted.</p>
-      <ol id="trace" class="trace"></ol>
-    </section>
-
     <section class="alert" id="alert-card" hidden></section>
 
     <section class="card trust-untrusted" id="proposal-card" hidden>
-      <h2>Agent's proposal <span class="tag tag-untrusted">unverified claim</span></h2>
+      <h2>The agent's proposal <span class="tag tag-untrusted">Unverified claim</span></h2>
       <dl id="proposal" class="facts"></dl>
-      <p class="muted">Nothing has been paid. Approving in PayPal only holds the funds; the firewall then decides.</p>
+      <p class="muted">Nothing has been paid yet. Approving in PayPal only holds the money; the firewall then decides whether it moves.</p>
       <div class="button-row">
-        <a id="approve-link" class="button button-primary" href="#">Approve payment in PayPal</a>
+        <a id="approve-link" class="button button-primary" href="#">Approve in PayPal</a>
       </div>
     </section>
 
     <section class="verdict verdict-block" id="blocked-card" hidden>
-      <span class="badge badge-block">BLOCK</span>
-      <p class="verdict-summary">No PayPal order was created.</p>
+      <span class="badge badge-block">Blocked</span>
+      <p class="verdict-summary">No PayPal order was created, so no money was held.</p>
       <ul id="blocked-reasons" class="reasons"></ul>
+    </section>
+
+    <section class="plain" id="trace-card">
+      <h2>What the agent did</h2>
+      <p class="muted">Every step, in order. Shop pages are written by sellers, so their text is untrusted.</p>
+      <ol id="trace" class="trace"></ol>
     </section>
   </section>
 </main>
 <script src="/static/status_messages.js" defer></script>
 <script src="/static/trace_view.js" defer></script>
 <script src="/static/trace_render.js" defer></script>
+<script src="/static/hero.js" defer></script>
 <script src="/static/app.js" defer></script>
 </body>
 </html>

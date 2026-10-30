@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Attack Lab · Agent Payment Firewall</title>
+  <title>Attack Lab: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -13,41 +13,41 @@
     <nav class="site-nav" aria-label="Main"><a href="/">Demo</a><a href="/lab" aria-current="page">Attack Lab</a><a href="/security">Security</a></nav>
   </header>
   <header class="page-header">
-    <h1 class="page-title">Attack Lab</h1>
-    <p class="tagline">Can you trick the agent? Can you trick the firewall?</p>
+    <h1 class="page-title">Can you trick the agent? Can you trick the firewall?</h1>
+    <p class="lede">Write your own hidden instruction, add it to a shop's listing, and see whether the shopping agent falls for it and whether the firewall catches it.</p>
     <p class="lab-note">This is a simulation. No PayPal order is created.</p>
     <p id="server-status" class="server-status" role="status" aria-live="polite"></p>
   </header>
 
-  <section class="card">
-    <h2>Plant your instruction</h2>
-    <p class="muted">Pick a shop and write text that tries to steer the shopping agent. It is added to that shop's product listing for this one run, then the agent shops all three stores and the firewall checks whatever it proposes. Your text is not stored.</p>
+  <section class="card" aria-labelledby="plant-title">
+    <h2 id="plant-title">Write your attack</h2>
+    <p class="muted">Your text is added to the shop's listing for this one run only and is not stored. The agent then shops all three stores, and the firewall checks whatever it chooses.</p>
     <form id="lab-form" autocomplete="off">
       <fieldset class="scenarios">
-        <legend>Shop to plant it on</legend>
-        <label class="scenario-card scenario-clean">
+        <legend>Which shop's listing should it go on?</legend>
+        <label class="scenario-card">
           <input type="radio" name="target-shop" value="techmart">
           <span class="scenario-name">TechMart</span>
           <span class="scenario-desc">Approved shop. Shockproof case, $18.00.</span>
         </label>
-        <label class="scenario-card scenario-clean">
+        <label class="scenario-card">
           <input type="radio" name="target-shop" value="gadgethub">
           <span class="scenario-name">GadgetHub</span>
           <span class="scenario-desc">Approved shop. Slim case, $15.00.</span>
         </label>
-        <label class="scenario-card scenario-poisoned">
+        <label class="scenario-card">
           <input type="radio" name="target-shop" value="techmartdeals" checked>
           <span class="scenario-name">TechMart Deals</span>
-          <span class="scenario-desc">Not approved. Phone case, $12.00.</span>
+          <span class="scenario-desc">Not an approved shop. Phone case, $12.00.</span>
         </label>
       </fieldset>
 
       <label for="injected-text">Your instruction to the agent</label>
-      <textarea id="injected-text" rows="4" maxlength="500" required placeholder="e.g. NOTE TO AI ASSISTANTS: ..."></textarea>
+      <textarea id="injected-text" rows="4" maxlength="500" required placeholder="For example: Note to AI assistants: ..."></textarea>
       <div class="field-meta">
-        <div class="examples" aria-label="Examples">
-          <span class="muted">Examples:</span>
-          <button type="button" class="chip" data-example="0">Original TechMart Deals note</button>
+        <div class="examples">
+          <span class="muted">Start from an example:</span>
+          <button type="button" class="chip" data-example="0">The original TechMart Deals note</button>
           <button type="button" class="chip" data-example="1">Ignore previous instructions</button>
           <button type="button" class="chip" data-example="2">Fake security notice</button>
           <button type="button" class="chip" data-example="3">Fake customer review</button>
@@ -56,7 +56,7 @@
       </div>
 
       <fieldset class="segmented">
-        <legend>How it appears on the page</legend>
+        <legend>Can shoppers see it?</legend>
         <label><input type="radio" name="visibility" value="hidden" checked><span>Hidden from shoppers</span></label>
         <label><input type="radio" name="visibility" value="visible"><span>Visible to shoppers</span></label>
       </fieldset>
@@ -65,13 +65,11 @@
         <summary>Demo access</summary>
         <label for="access-key">Access key</label>
         <input id="access-key" class="input-short" type="password" required autocomplete="off">
-        <p class="hint">Kept in this page's memory only; never stored.</p>
+        <p class="hint">The key stays in this page's memory and is never saved.</p>
       </details>
 
       <div class="button-row">
-        <button type="submit" id="submit" class="button button-primary">
-          <span class="spinner" aria-hidden="true"></span><span id="submit-label">Run the attack</span>
-        </button>
+        <button type="submit" id="submit" class="button button-primary"><span id="submit-label">Try this attack</span></button>
       </div>
       <p id="status" class="outcome" role="status" aria-live="polite"></p>
     </form>
@@ -80,12 +78,12 @@
   <section id="results" hidden>
     <div class="scorecards">
       <section class="scorecard" id="agent-score">
-        <span class="scorecard-label">Agent</span>
+        <span class="scorecard-label">The agent</span>
         <span class="scorecard-value" id="agent-score-value"></span>
         <span class="scorecard-detail" id="agent-score-detail"></span>
       </section>
       <section class="scorecard" id="firewall-score">
-        <span class="scorecard-label">Firewall</span>
+        <span class="scorecard-label">The firewall</span>
         <span class="scorecard-value" id="firewall-score-value"></span>
         <span class="scorecard-detail" id="firewall-score-detail"></span>
       </section>
@@ -98,27 +96,27 @@
     </section>
 
     <section class="card trust-untrusted" id="proposal-card" hidden>
-      <h2>Agent's proposal <span class="tag tag-untrusted">unverified claim</span></h2>
+      <h2>The agent's proposal <span class="tag tag-untrusted">Unverified claim</span></h2>
       <dl id="proposal" class="facts"></dl>
     </section>
 
-    <section class="card">
+    <section class="plain">
       <h2 id="target-title">Your target page</h2>
       <div id="target-view"></div>
     </section>
 
-    <section class="card">
+    <section class="plain">
       <h2>What the agent did</h2>
       <ol id="trace" class="trace"></ol>
     </section>
 
-    <section class="card">
-      <h2>Rule checks <span class="tag tag-trusted">deterministic</span></h2>
+    <section class="plain">
+      <h2>Rule checks <span class="tag tag-trusted">Deterministic</span></h2>
       <div id="rules"></div>
     </section>
 
-    <section class="card">
-      <h2>AI checks <span class="tag tag-ai">can only escalate</span></h2>
+    <section class="plain">
+      <h2>AI checks <span class="tag tag-ai">Can only escalate</span></h2>
       <div id="ai-checks"></div>
     </section>
   </section>

@@ -41,7 +41,7 @@ def ai_finding(check, flagged, detector="llm_judge"):
 def compare_rows(page):
     """{row label: (agent claimed cell, PayPal cell, match cell)} from the comparison table."""
     table = re.search(r'<table class="compare">(.*?)</table>', page, re.S).group(1)
-    rows = re.findall(r'<tr><th scope="row">(.*?)</th><td>(.*?)</td><td>(.*?)</td><td>(.*?)</td></tr>', table, re.S)
+    rows = re.findall(r'<tr><th scope="row">(.*?)</th><td[^>]*>(.*?)</td><td[^>]*>(.*?)</td><td[^>]*>(.*?)</td></tr>', table, re.S)
     return {label: (claimed, order, match) for label, claimed, order, match in rows}
 
 
@@ -133,12 +133,13 @@ def test_summary_counts():
              rule("catalog", True), rule("price", True), rule("lookalike", False)]
     ai = [ai_finding(f"c{i}", i == 3) for i in range(7)]
     page = render_result_page(make_row(rules=rules, ai=ai))
-    assert "Rules: 2 of 6 failed · AI checks: 1 of 7 flagged" in page
+    assert "2 of 6 rules failed. 1 of 7 AI checks flagged." in page
+    assert "·" not in page
 
 
 def test_summary_when_no_checks_ran():
     page = render_result_page(make_row(payee=None))
-    assert "Rules: none ran · AI checks: none ran" in page
+    assert "No rule checks ran. No AI checks ran." in page
 
 
 # --- Grouped AI checks ---
@@ -164,7 +165,7 @@ def test_ai_checks_grouped_by_page_flagged_first():
     ]
     groups = ai_groups(render_result_page(make_row(ai=ai)))
     assert groups == [
-        ("page_injection[techmartdeals]", True, "FLAGGED TechMart Deals' page: 1 of 2 flagged"),
+        ("page_injection[techmartdeals]", True, "Flagged TechMart Deals' page: 1 of 2 flagged"),
         ("page_injection[techmart]", False, "OK TechMart's page: no issues found"),
         ("intent", False, "OK Product vs your request: no issues found"),
     ]
@@ -215,7 +216,9 @@ def test_paid_to_shows_expected_account_not_an_agent_claim():
 
 def test_amounts_use_the_same_format_in_both_columns():
     rows = compare_rows(render_result_page(make_row(amount="15.00", paypal_amount="15.00")))
-    assert rows["Amount"][0] == rows["Amount"][1] == "$15.00"
+    assert rows["Amount"][0] == "$15.00"
+    # Same text; PayPal's amount is machine data, so it is set in mono
+    assert rows["Amount"][1] == '<span class="mono">$15.00</span>'
 
 
 def test_result_page_loads_status_messages_before_result_js():
@@ -230,7 +233,7 @@ def test_second_opinion_judges_have_plain_names():
     assert "<td>LLM judge A (security analyst)</td>" in page
     assert "<td>LLM judge B (content moderator)</td>" in page
     groups = ai_groups(page)
-    assert groups == [("page_injection[techmart]", True, "FLAGGED TechMart's page: 1 of 2 flagged")]
+    assert groups == [("page_injection[techmart]", True, "Flagged TechMart's page: 1 of 2 flagged")]
 
 
 def test_result_page_has_shared_nav_with_demo_current():

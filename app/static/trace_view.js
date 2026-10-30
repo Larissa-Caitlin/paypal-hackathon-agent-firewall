@@ -79,6 +79,19 @@ function summarizeTrace(trace, shopNames) {
   return items;
 }
 
+// Split a shop page into the description a person sees and the lines only the agent reads.
+// visibleText / fullText come from /shops/{key}/views; the description is whatever
+// follows the "Product ID:" line.
+function listingParts(visibleText, fullText) {
+  const visible = visibleText.split("\n");
+  const idLine = visible.findIndex(function (line) { return line.indexOf("Product ID:") === 0; });
+  return {
+    productIdLine: idLine === -1 ? null : visible[idLine],
+    description: idLine === -1 ? [] : visible.slice(idLine + 1),
+    hidden: compareTexts(fullText, visibleText).lines.filter(function (l) { return l.hidden; }).map(function (l) { return l.text; }),
+  };
+}
+
 // Plain names for AI detectors; same wording as the server-rendered result page.
 const DETECTOR_LABELS = {
   prompt_guard: "Injection classifier (Prompt Guard)",
@@ -117,6 +130,7 @@ function groupAiFindings(ai) {
 if (typeof module !== "undefined") {
   module.exports = {
     compareTexts: compareTexts,
+    listingParts: listingParts,
     possessive: possessive,
     summarizeTrace: summarizeTrace,
     detectorLabel: detectorLabel,

@@ -29,15 +29,15 @@ def call(fn, *args):
 @pytest.mark.parametrize(
     "status, detail, expected",
     [
-        (401, "Missing or invalid X-Demo-Key header", "The access key is wrong."),
+        (401, "Missing or invalid X-Demo-Key header", "That access key didn't work. Check it and try again."),
         (429, "Rate limit reached: 10 purchases per hour", "Rate limit reached: 10 purchases per hour"),
-        (429, None, "Too many requests. Try again later."),
-        (503, "Purchasing is disabled: no access key is configured", "Demo access isn't configured on the server."),
+        (429, None, "Too many requests. Wait a while and try again."),
+        (503, "Purchasing is disabled: no access key is configured", "Demo access isn't set up on this server, so purchases are turned off."),
         (502, None, WAKING_UP),
         (504, None, WAKING_UP),
         (0, None, WAKING_UP),
-        (500, "boom", "Something went wrong (HTTP 500)."),
-        (422, [{"msg": "bad"}], "Something went wrong (HTTP 422)."),
+        (500, "boom", "Something went wrong on the server (HTTP 500). Try again in a moment."),
+        (422, [{"msg": "bad"}], "Something went wrong on the server (HTTP 422). Try again in a moment."),
     ],
 )
 def test_error_message_by_status(status, detail, expected):

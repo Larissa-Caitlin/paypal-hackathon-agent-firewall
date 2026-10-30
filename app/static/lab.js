@@ -34,12 +34,12 @@
   ];
 
   const LOADING_STEPS = [
-    "Planting your text on the page...",
-    "Agent is browsing shops...",
-    "Agent is reading shop pages...",
-    "Agent is choosing a product...",
-    "Firewall is checking the proposal...",
-    "Still working. This can take up to a minute...",
+    "Adding your text to the page...",
+    "The agent is looking at the shops...",
+    "The agent is reading the shop pages...",
+    "The agent is choosing what to buy...",
+    "The firewall is checking the proposal...",
+    "Still working. This can take up to a minute.",
   ];
 
   let shopNames = {};
@@ -73,7 +73,7 @@
     let i = 0;
     submitBtn.disabled = true;
     submitBtn.classList.add("loading");
-    submitLabel.textContent = "Running";
+    submitLabel.textContent = "Running the attack...";
     setStatus(LOADING_STEPS[0]);
     const timer = setInterval(function () {
       i = Math.min(i + 1, LOADING_STEPS.length - 1);
@@ -83,7 +83,7 @@
       clearInterval(timer);
       submitBtn.disabled = false;
       submitBtn.classList.remove("loading");
-      submitLabel.textContent = "Run the attack";
+      submitLabel.textContent = "Try this attack";
     };
   }
 
@@ -122,27 +122,28 @@
     const s = data.summary;
     const target = TraceRender.shopName(shopNames, data.target_shop);
     if (!data.proposal) {
-      score("agent-score", "neutral", "No purchase", "The agent did not propose a payment.");
-      score("firewall-score", "neutral", "Nothing to check", "There was no payment to check.");
+      score("agent-score", "neutral", "No purchase", "The agent did not choose anything to buy.");
+      score("firewall-score", "neutral", "Nothing to check", "Without a purchase there was no payment to check.");
       return;
     }
     const chosen = TraceRender.shopName(shopNames, s.chosen_shop);
     if (s.agent_fooled) {
-      score("agent-score", "bad", "Fooled", "Chose " + chosen + ", the shop you targeted.");
+      score("agent-score", "bad", "Fooled", "It chose " + chosen + ", the shop you targeted.");
     } else {
-      score("agent-score", "good", "Not fooled", "Chose " + chosen + ", not " + target + ".");
+      score("agent-score", "good", "Not fooled", "It chose " + chosen + ", not " + target + ".");
     }
     if (s.firewall_caught) {
-      score("firewall-score", "good", "Caught", "By " + s.caught_by.map(caughtByLabel).join(", ") + ".");
+      score("firewall-score", "good", "Caught", "Stopped by " + s.caught_by.map(caughtByLabel).join(", ") + ".");
     } else {
-      score("firewall-score", "bad", "Missed", "This payment would have been captured.");
+      score("firewall-score", "bad", "Missed", "This payment would have gone through.");
     }
   }
 
+  const VERDICT_LABELS = { allow: "Allowed", hold: "Held", block: "Blocked" };
   const VERDICT_SUMMARIES = {
-    allow: "All checks passed. A real payment would have been captured.",
-    hold: "Something looked suspicious. A real payment would be held until the user decides.",
-    block: "The firewall would stop this payment and release the held funds.",
+    allow: "Every check passed. A real payment would have gone through.",
+    hold: "Something looked wrong. A real payment would be held until the buyer decides.",
+    block: "The firewall would stop this payment and release the held money.",
   };
 
   function renderVerdict(verdict) {
@@ -150,7 +151,7 @@
     document.getElementById("verdict").className = "verdict verdict-" + decision;
     const badge = document.getElementById("verdict-badge");
     badge.className = "badge badge-" + decision;
-    badge.textContent = decision.toUpperCase();
+    badge.textContent = VERDICT_LABELS[decision];
     document.getElementById("verdict-summary").textContent = VERDICT_SUMMARIES[decision];
     const reasons = document.getElementById("verdict-reasons");
     reasons.replaceChildren();
@@ -175,8 +176,8 @@
     const product = Object.prototype.hasOwnProperty.call(products, proposal.product_id) ? products[proposal.product_id] : null;
     row("Shop", TraceRender.shopName(shopNames, proposal.shop_key), proposal.shop_key);
     row("Product", product ? product.name : "Unknown product", proposal.product_id);
-    row("Claimed price", "$" + proposal.amount);
-    row("Agent's reason", proposal.reason);
+    row("Price it claims", "$" + proposal.amount);
+    row("Its reason", proposal.reason);
   }
 
   function renderTarget(data) {
@@ -224,11 +225,11 @@
     accessKey = cleanKey(document.getElementById("access-key").value);
     const text = textInput.value.trim();
     if (!text) {
-      setStatus("Write an instruction first, or pick an example.", true);
+      setStatus("Write an instruction for the agent, or pick an example, then try again.", true);
       return;
     }
     if (!accessKey) {
-      setStatus("Enter the access key.", true);
+      setStatus("Enter the access key under Demo access, then try again.", true);
       return;
     }
     const target = form.querySelector('input[name="target-shop"]:checked');
@@ -251,9 +252,9 @@
     try {
       await render(response.data);
       results.hidden = false;
-      setStatus("Done. Scroll down for the details.");
+      setStatus("Done. The results are below.");
     } catch (e) {
-      setStatus("Could not display the result.", true);
+      setStatus("The run finished, but its result could not be shown. Reload the page and try again.", true);
     }
   });
 })();

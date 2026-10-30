@@ -13,16 +13,16 @@ from app.catalog import get_product, list_shops
 from app.page_chrome import site_header
 from app.policy import ALLOWED_MERCHANTS
 
-VERDICT_LABELS = {"allow": "ALLOW", "block": "BLOCK", "hold": "HOLD"}
+VERDICT_LABELS = {"allow": "Allowed", "block": "Blocked", "hold": "Held"}
 VERDICT_SUMMARIES = {
-    "allow": "All checks passed. The payment was captured.",
-    "block": "The firewall stopped this payment. The held funds were released.",
-    "hold": "Something looks suspicious. The funds are held until you decide.",
+    "allow": "Every check passed, so the payment went through.",
+    "block": "The firewall stopped this payment and released the held money.",
+    "hold": "Something looks wrong. The money is held until you decide below.",
 }
 ACTION_LABELS = {
-    "captured": "Payment captured",
-    "voided": "Authorization voided (funds released)",
-    "held": "Funds held, waiting for you",
+    "captured": "Payment sent",
+    "voided": "Payment cancelled and held money released",
+    "held": "Money held, waiting for your decision",
     "user_approved": "You approved the payment",
     "user_rejected": "You rejected the payment",
     "error": "Error",
@@ -67,7 +67,7 @@ def _outcome(row):
         return "Error", "block"
     if "held" in actions:
         return "Held", "hold"
-    return VERDICT_LABELS.get(row["decision"], row["decision"]).title(), row["decision"]
+    return VERDICT_LABELS.get(row["decision"], row["decision"]), row["decision"]
 
 
 def _progress(row):
@@ -82,14 +82,15 @@ def _progress(row):
         f'<li class="stage stage-result stage-{_e(verdict)}" aria-current="step">'
         f'<span class="stage-label">{_e(label)}</span></li>'
     )
-    return f'<ol class="progress" aria-label="Purchase progress">{items}</ol>'
+    # progress-animate: the stages fill in once on load (the page's one animation)
+    return f'<ol class="progress progress-animate" aria-label="Purchase progress">{items}</ol>'
 
 
 def _rule_rows(rules):
     if not rules:
         return '<p class="muted">No rule checks ran for this payment.</p>'
     rows = "".join(
-        f"<tr><td>{_status(f['passed'], 'PASS', 'FAIL')}</td>"
+        f"<tr><td>{_status(f['passed'], 'Pass', 'Fail')}</td>"
         f"<td class=\"mono\">{_e(f['rule'])}</td><td>{_e(f['reason'])}</td></tr>"
         for f in rules
     )
@@ -129,8 +130,11 @@ def _expected_payee(shop_key):
     )
 
 
-def _money(value):
-    return f"${_e(value)}" if value else '<span class="muted">none</span>'
+def _money(value, from_paypal=False):
+    if not value:
+        return '<span class="muted">none</span>'
+    # Amounts reported by PayPal are machine data, so they are set in mono
+    return f'<span class="mono">${_e(value)}</span>' if from_paypal else f"${_e(value)}"
 
 
 def _same_amount(a, b):
@@ -159,23 +163,25 @@ def _comparison(row):
         order_shop = f'{_e(_shop_name(payee_shop) or payee_shop)} <span class="muted">(owns the payee account)</span>'
     else:
         order_shop = '<span class="payee-unapproved">not an approved shop</span>'
-    order_currency = _e(row["paypal_currency"]) if row["paypal_currency"] else '<span class="muted">none</span>'
+    order_currency = f'<span class="mono">{_e(row["paypal_currency"])}</span>' if row["paypal_currency"] else '<span class="muted">none</span>'
     expected = ALLOWED_MERCHANTS.get(shop_key)
 
     rows = [
         ("Shop", _claimed_shop(shop_key), order_shop, payee_shop is not None and payee_shop == shop_key),
-        ("Amount", _money(row["agent_claimed_amount"]), _money(row["paypal_amount"]),_same_amount(row["agent_claimed_amount"], row["paypal_amount"])),
+        ("Amount", _money(row["agent_claimed_amount"]), _money(row["paypal_amount"], from_paypal=True), _same_amount(row["agent_claimed_amount"], row["paypal_amount"])),
         ("Currency", "USD", order_currency, row["paypal_currency"] == "USD"),
         ("Paid to", _expected_payee(shop_key), _payee(payee), bool(expected) and expected == payee),
     ]
     body = "".join(
-        f"<tr><th scope=\"row\">{label}</th><td>{claimed}</td><td>{order}</td><td>{_match(ok if has_order else None)}</td></tr>"
+        # data-label names each cell when the table stacks on narrow screens
+        f"<tr><th scope=\"row\">{label}</th><td data-label=\"The agent claimed\">{claimed}</td>"
+        f"<td data-label=\"PayPal reports\">{order}</td><td data-label=\"Match\">{_match(ok if has_order else None)}</td></tr>"
         for label, claimed, order, ok in rows
     )
     return (
         '<div class="table-wrap"><table class="compare"><thead><tr><th></th>'
-        '<th>Agent claimed <span class="tag tag-untrusted">untrusted</span></th>'
-        '<th>PayPal order <span class="tag tag-trusted">trusted</span></th>'
+        '<th>The agent claimed <span class="tag tag-untrusted">Untrusted</span></th>'
+        '<th>PayPal reports <span class="tag tag-trusted">Trusted</span></th>'
         '<th>Match</th></tr></thead>'
         f"<tbody>{body}</tbody></table></div>"
     )
@@ -191,7 +197,7 @@ def _proposal_details(row):
     )
     return f"""<dl class="facts facts-small">
         <dt>Product</dt><dd>{product_html}</dd>
-        <dt>Agent's reason</dt><dd>{_e(row["agent_reason"])}</dd>
+        <dt>The agent's reason</dt><dd>{_e(row["agent_reason"])}</dd>
         <dt>PayPal order</dt><dd class="mono">{_e(row["order_id"])}</dd>
         <dt>Your budget</dt><dd>${_e(row["budget"])}</dd>
       </dl>"""
@@ -200,9 +206,11 @@ def _proposal_details(row):
 def _summary(rules, ai):
     failed = sum(not f["passed"] for f in rules)
     flagged = sum(f["flagged"] for f in ai)
-    rules_text = f"Rules: {failed} of {len(rules)} failed" if rules else "Rules: none ran"
-    ai_text = f"AI checks: {flagged} of {len(ai)} flagged" if ai else "AI checks: none ran"
-    return f"{rules_text} · {ai_text}"
+    rule_word = "rule" if len(rules) == 1 else "rules"
+    check_word = "AI check" if len(ai) == 1 else "AI checks"
+    rules_text = f"{failed} of {len(rules)} {rule_word} failed." if rules else "No rule checks ran."
+    ai_text = f"{flagged} of {len(ai)} {check_word} flagged." if ai else "No AI checks ran."
+    return f"{rules_text} {ai_text}"
 
 
 def _group_title(check):
@@ -228,13 +236,13 @@ def _ai_groups(ai):
         title = _group_title(check)
         flagged = sum(f["flagged"] for f in findings)
         rows = "".join(
-            f"<tr><td>{_status(not f['flagged'], 'OK', 'FLAGGED')}</td>"
+            f"<tr><td>{_status(not f['flagged'], 'OK', 'Flagged')}</td>"
             f"<td>{_e(DETECTOR_LABELS.get(f['detector'], f['detector']))}</td>"
             f"<td>{_e(f['reason'])}</td></tr>"
             for f in findings
         )
         if flagged:
-            summary = f"{_status(False, '', 'FLAGGED')} {_e(title)}: {flagged} of {len(findings)} flagged"
+            summary = f"{_status(False, '', 'Flagged')} {_e(title)}: {flagged} of {len(findings)} flagged"
             attrs = 'class="ai-group ai-group-flagged" open'
         else:
             summary = f"{_status(True, 'OK', '')} {_e(title)}: no issues found"
@@ -263,12 +271,12 @@ def _hold_controls(row):
     return f"""
     <section class="card" id="hold-controls" data-decision-id="{_e(row['id'])}">
       <h2>Your decision</h2>
-      <p>Enter the access key, then approve (capture) or reject (void) this payment.</p>
+      <p>The money is held, not paid. Enter the access key, then choose: approving sends the payment, rejecting cancels it and releases the money.</p>
       <label for="hold-key">Access key</label>
       <input id="hold-key" class="input-short" type="password" autocomplete="off">
       <div class="button-row">
-        <button type="button" id="hold-approve" class="button button-allow">Approve payment</button>
-        <button type="button" id="hold-reject" class="button button-block">Reject payment</button>
+        <button type="button" id="hold-approve" class="button button-allow">Approve and pay</button>
+        <button type="button" id="hold-reject" class="button button-block">Reject and release the money</button>
       </div>
       <p id="hold-outcome" class="outcome" role="status"></p>
     </section>"""
@@ -287,15 +295,15 @@ def render_result_page(row) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Firewall verdict</title>
+  <title>The firewall's decision: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <main class="container">
   {site_header("demo")}
   <header class="page-header">
-    <h1 class="page-title">Firewall verdict</h1>
-    <a class="link" href="/">&larr; Start a new purchase</a>
+    <h1 class="page-title">The firewall's decision</h1>
+    <a class="link" href="/">Start a new purchase</a>
   </header>
 
   {_progress(row)}
@@ -307,26 +315,27 @@ def render_result_page(row) -> str:
     <p class="check-summary">{_e(_summary(rules, ai))}</p>
   </section>
 
-  <section class="card">
-    <h2>PayPal action</h2>
-    {_actions(row["actions"])}
-  </section>
   {_hold_controls(row)}
 
   <section class="card" id="comparison">
     <h2>Claimed vs verified</h2>
-    <p class="muted">What the agent said, next to what PayPal reports for the actual order.</p>
+    <p class="muted">What the agent said, next to what PayPal reports for the real order.</p>
     {_comparison(row)}
     {_proposal_details(row)}
   </section>
 
-  <section class="card">
-    <h2>Rule checks <span class="tag tag-trusted">deterministic</span></h2>
+  <section class="plain">
+    <h2>What happened in PayPal</h2>
+    {_actions(row["actions"])}
+  </section>
+
+  <section class="plain">
+    <h2>Rule checks <span class="tag tag-trusted">Deterministic</span></h2>
     {_rule_rows(rules)}
   </section>
 
-  <section class="card" id="ai-checks">
-    <h2>AI checks <span class="tag tag-ai">can only escalate</span></h2>
+  <section class="plain" id="ai-checks">
+    <h2>AI checks <span class="tag tag-ai">Can only escalate</span></h2>
     {_ai_groups(ai)}
   </section>
 </main>
