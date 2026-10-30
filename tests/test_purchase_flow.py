@@ -582,9 +582,9 @@ def test_result_page_escapes_untrusted_text(client, monkeypatch):
     assert XSS not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     # The only script elements are our own external files
-    assert page.count("<script") == 2
-    assert '<script src="/static/status_messages.js" defer></script>' in page
-    assert '<script src="/static/result.js" defer></script>' in page
+    assert page.count("<script") == 3
+    for src in ("status_messages.js", "result.js", "result_confirmations.js"):
+        assert f'<script src="/static/{src}" defer></script>' in page
 
 
 def test_result_page_shows_hold_controls_until_resolved(client, monkeypatch):

@@ -9,7 +9,11 @@ import time
 from collections import defaultdict, deque
 
 
-BUCKET_NOUNS = {"purchase": "purchases", "lab": "lab runs"}
+BUCKET_NOUNS = {"purchase": "purchases", "lab": "lab runs", "webhook": "webhook calls"}
+
+
+def _per(seconds):
+    return {60: "minute", 3600: "hour", 86400: "day"}.get(seconds, f"{seconds} seconds")
 
 
 class PurchaseLimiter:
@@ -41,9 +45,9 @@ class PurchaseLimiter:
             self._prune(mine, now, self.per_ip_window)
             self._prune(self._all, now, self.overall_window)
             if len(mine) >= self.per_ip:
-                return f"Too many {noun}: at most {self.per_ip} per hour from one address. Try again later."
+                return f"Too many {noun}: at most {self.per_ip} per {_per(self.per_ip_window)} from one address. Try again later."
             if len(self._all) >= self.overall:
-                return f"The demo has reached its limit of {self.overall} runs per day. Try again tomorrow."
+                return f"The demo has reached its limit of {self.overall} runs per {_per(self.overall_window)}. Try again later."
             mine.append(now)
             self._all.append(now)
             return None

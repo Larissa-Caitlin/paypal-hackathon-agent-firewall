@@ -195,6 +195,10 @@ DECISIONS = [
     ("PayPal's order is the source of truth",
      "Amount, currency and payee are read back from PayPal after approval. The agent's claims are compared "
      "against them and against the catalog, never trusted."),
+    ("Webhooks are verified, and only confirm",
+     "Every PayPal webhook is checked with PayPal's signature verification, using that shop's own app; anything "
+     "else is rejected and never stored. A verified event only confirms what happened and flags a contradiction "
+     "with the firewall's decision. It never moves money or changes a decision."),
     ("Append-only audit log",
      "Every proposal, decision, capture, void and user action is logged. SQLite triggers reject updates and "
      "deletes, and money is stored as strings."),

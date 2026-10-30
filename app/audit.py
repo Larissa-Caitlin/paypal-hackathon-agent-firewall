@@ -1,4 +1,5 @@
-"""Append-only audit log: purchases, firewall decisions and actions taken on them.
+"""Append-only audit log: purchases, firewall decisions, actions taken on them,
+and verified PayPal webhook events.
 
 SQLite via the standard library. This module deliberately has no update or
 delete functions, and database triggers reject UPDATE and DELETE as well.
@@ -77,6 +78,30 @@ CREATE TRIGGER IF NOT EXISTS decisions_no_delete BEFORE DELETE ON decisions
 CREATE TRIGGER IF NOT EXISTS actions_no_update BEFORE UPDATE ON actions
     BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS actions_no_delete BEFORE DELETE ON actions
+    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+-- Only events whose signature PayPal verified are stored; event_id stops replays and retries
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    event_type TEXT NOT NULL,
+    shop_key TEXT NOT NULL,
+    resource_id TEXT,
+    order_id TEXT,
+    authorization_id TEXT,
+    capture_id TEXT,
+    amount TEXT,
+    currency TEXT,
+    received_at TEXT NOT NULL,
+    verified INTEGER NOT NULL CHECK (verified = 1),
+    decision_id INTEGER REFERENCES decisions(id),
+    reconciliation TEXT NOT NULL,  -- match | mismatch | info | unmatched
+    reconciliation_detail TEXT
+);
+CREATE INDEX IF NOT EXISTS webhook_events_order ON webhook_events(order_id);
+CREATE INDEX IF NOT EXISTS webhook_events_authorization ON webhook_events(authorization_id);
+CREATE TRIGGER IF NOT EXISTS webhook_events_no_update BEFORE UPDATE ON webhook_events
+    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS webhook_events_no_delete BEFORE DELETE ON webhook_events
     BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 """
 
@@ -219,3 +244,61 @@ def get_decision_with_actions(decision_id) -> dict | None:
     result = dict(row)
     result["actions"] = [dict(a) for a in actions]
     return result
+
+
+WEBHOOK_FIELDS = ("event_id", "event_type", "shop_key", "resource_id", "order_id", "authorization_id",
+                  "capture_id", "amount", "currency", "decision_id", "reconciliation", "reconciliation_detail")
+
+
+def webhook_event_exists(event_id) -> bool:
+    init_db()
+    with closing(_connect()) as conn:
+        return conn.execute("SELECT 1 FROM webhook_events WHERE event_id = ?", (event_id,)).fetchone() is not None
+
+
+def log_webhook_event(fields: dict) -> bool:
+    """Store a verified webhook event. Returns False (and stores nothing) for a duplicate event_id."""
+    init_db()
+    try:
+        with closing(_connect()) as conn, conn:
+            conn.execute(
+                f"INSERT INTO webhook_events ({', '.join(WEBHOOK_FIELDS)}, received_at, verified) "
+                f"VALUES ({', '.join('?' for _ in WEBHOOK_FIELDS)}, ?, 1)",
+                (*(fields.get(f) for f in WEBHOOK_FIELDS), _now()),
+            )
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e) and "event_id" in str(e):
+            return False
+        raise
+    return True
+
+
+def find_decision_for_payment(authorization_id=None, order_id=None) -> dict | None:
+    """The decision (with actions) a PayPal event refers to: by authorization ID first, then order ID."""
+    init_db()
+    with closing(_connect()) as conn:
+        row = None
+        if authorization_id:
+            row = conn.execute(
+                "SELECT id FROM decisions WHERE authorization_id = ? ORDER BY id DESC LIMIT 1", (authorization_id,)
+            ).fetchone()
+        if row is None and order_id:
+            row = conn.execute(
+                "SELECT id FROM decisions WHERE order_id = ? ORDER BY id DESC LIMIT 1", (order_id,)
+            ).fetchone()
+    return get_decision_with_actions(row["id"]) if row else None
+
+
+def get_webhook_events_for_order(order_id) -> list[dict]:
+    """Verified events for an order: those naming the order, or its decisions' authorizations (oldest first)."""
+    init_db()
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            """SELECT * FROM webhook_events
+               WHERE order_id = ?
+                  OR authorization_id IN (
+                      SELECT authorization_id FROM decisions WHERE order_id = ? AND authorization_id IS NOT NULL)
+               ORDER BY id""",
+            (order_id, order_id),
+        ).fetchall()
+    return [dict(r) for r in rows]

@@ -179,3 +179,42 @@ def capture_authorization(shop, authorization_id) -> str:
 def void_authorization(shop, authorization_id) -> None:
     """Release held funds. PayPal answers 204 on success."""
     _request(shop, "POST", f"/v2/payments/authorizations/{authorization_id}/void")
+
+
+# PayPal's signature headers, all required to verify a webhook
+WEBHOOK_HEADERS = {
+    "auth_algo": "paypal-auth-algo",
+    "cert_url": "paypal-cert-url",
+    "transmission_id": "paypal-transmission-id",
+    "transmission_sig": "paypal-transmission-sig",
+    "transmission_time": "paypal-transmission-time",
+}
+
+
+def webhook_id(shop):
+    """The shop's webhook ID from PAYPAL_<SHOP>_WEBHOOK_ID, or ValueError if unset (fail closed)."""
+    if shop not in SHOPS:
+        raise ValueError(f"Unknown shop: {shop!r} (expected one of {', '.join(SHOPS)})")
+    name = f"PAYPAL_{shop.upper()}_WEBHOOK_ID"
+    value = os.environ.get(name)
+    if not value:
+        raise ValueError(f"Missing webhook ID in environment: {name}")
+    return value
+
+
+def verify_webhook_signature(shop, headers, event) -> bool:
+    """Ask PayPal whether a webhook event really came from PayPal for this shop's webhook.
+
+    headers: the request headers (case-insensitive mapping). event: the parsed body.
+    Returns True only for verification_status SUCCESS. Raises ValueError for missing
+    headers or configuration, PayPalError if PayPal rejects the call.
+    """
+    lowered = {k.lower(): v for k, v in headers.items()}
+    missing = [h for h in WEBHOOK_HEADERS.values() if not lowered.get(h)]
+    if missing:
+        raise ValueError(f"Missing webhook headers: {', '.join(missing)}")
+    body = {field: lowered[header] for field, header in WEBHOOK_HEADERS.items()}
+    body["webhook_id"] = webhook_id(shop)
+    body["webhook_event"] = event
+    data = _request(shop, "POST", "/v1/notifications/verify-webhook-signature", json=body).json()
+    return data.get("verification_status") == "SUCCESS"

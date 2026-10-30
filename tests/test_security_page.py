@@ -138,7 +138,7 @@ def test_charts_cover_the_evidence_and_link_sources_on_github(page):
 def test_design_decisions_and_limitations(page):
     for title in ("Authorize before deciding", "The agent never touches PayPal", "One PayPal app per merchant",
                   "Rules block, AI only escalates", "Fail-safe", "PayPal&#x27;s order is the source of truth",
-                  "Append-only audit log", "Web basics"):
+                  "Webhooks are verified, and only confirm", "Append-only audit log", "Web basics"):
         assert f"<h3>{title}</h3>" in page.text, title
     assert "PERMISSION_DENIED" in page.text
     for phrase in ("not a blind test", "hand-written case set", "One model.", "Simulated orders in the attack set"):

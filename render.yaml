@@ -24,6 +24,13 @@ services:
         sync: false
       - key: PAYPAL_TECHMARTDEALS_CLIENT_SECRET
         sync: false
+      # One webhook per shop app; unset means that shop's webhooks are rejected
+      - key: PAYPAL_TECHMART_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_GADGETHUB_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_TECHMARTDEALS_WEBHOOK_ID
+        sync: false
       # LLM provider (OpenAI-compatible)
       - key: LLM_BASE_URL
         value: https://api.groq.com/openai/v1

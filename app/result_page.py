@@ -282,8 +282,38 @@ def _hold_controls(row):
     </section>"""
 
 
-def render_result_page(row) -> str:
-    """Render a decision row (from audit.get_decision_with_actions) as a full HTML page."""
+WAITING = "Waiting for PayPal to confirm..."
+MISMATCH_NOTICE = "PayPal reported something different from what the firewall did. Check this payment in PayPal."
+
+
+def _confirmations(row, confirmations):
+    """Verified PayPal webhook events for this order. result_confirmations.js keeps it up to date."""
+    if not row.get("order_id"):
+        return ""
+    events = (confirmations or {}).get("events", [])
+    items = "".join(
+        f'<li class="confirmation confirmation-{_e(e["reconciliation"])}">'
+        f'<span class="confirmation-label">{_e(e["label"])}</span> '
+        f'<time class="muted" datetime="{_e(e["received_at"])}">{_e(e["received_at"])}</time>'
+        + (f'<span class="confirmation-detail">{_e(e["detail"])}</span>' if e["reconciliation"] == "mismatch" else "")
+        + "</li>"
+        for e in events
+    )
+    mismatch = (confirmations or {}).get("mismatch", False)
+    return f"""
+  <section class="plain" id="confirmations" data-order-id="{_e(row["order_id"])}">
+    <h2>PayPal confirmation <span class="tag tag-trusted">Verified webhooks</span></h2>
+    <p class="mismatch-notice" id="confirmations-mismatch"{"" if mismatch else " hidden"}>{_e(MISMATCH_NOTICE)}</p>
+    <p class="muted" id="confirmations-waiting"{" hidden" if events else ""}>{_e(WAITING)}</p>
+    <ul class="confirmations" id="confirmations-list">{items}</ul>
+  </section>"""
+
+
+def render_result_page(row, confirmations=None) -> str:
+    """Render a decision row (from audit.get_decision_with_actions) as a full HTML page.
+
+    confirmations: webhooks.confirmations() for the order, if any have arrived yet.
+    """
     decision = row["decision"]
     reasons = json.loads(row["reasons_json"])
     findings = json.loads(row["findings_json"])
@@ -328,6 +358,7 @@ def render_result_page(row) -> str:
     <h2>What happened in PayPal</h2>
     {_actions(row["actions"])}
   </section>
+  {_confirmations(row, confirmations)}
 
   <section class="plain">
     <h2>Rule checks <span class="tag tag-trusted">Deterministic</span></h2>
@@ -341,6 +372,7 @@ def render_result_page(row) -> str:
 </main>
 <script src="/static/status_messages.js" defer></script>
 <script src="/static/result.js" defer></script>
+<script src="/static/result_confirmations.js" defer></script>
 </body>
 </html>
 """

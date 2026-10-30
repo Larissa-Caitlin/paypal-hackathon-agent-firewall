@@ -8,11 +8,12 @@ from typing import Annotated, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 
-from app import audit, firewall, paypal_client
+from app import audit, firewall, paypal_client, webhooks
 from app.agent import Proposal, run_agent
 from app.catalog import PRODUCTS, get_product, list_shops
 from app.lab import run_lab
@@ -312,7 +313,9 @@ def purchase(req: PurchaseRequest):
 def _return_response(request, decision_id):
     """HTML result page for browsers (PayPal's redirect), JSON for everything else."""
     if "text/html" in request.headers.get("accept", ""):
-        return HTMLResponse(render_result_page(audit.get_decision_with_actions(decision_id)))
+        row = audit.get_decision_with_actions(decision_id)
+        confirmed = webhooks.confirmations(row["order_id"]) if row["order_id"] else None
+        return HTMLResponse(render_result_page(row, confirmed))
     return _decision_response(decision_id)
 
 
@@ -359,6 +362,71 @@ def paypal_return(token: str, request: Request):
     else:
         audit.log_action(decision_id, "held", "Funds held; waiting for the user to approve or reject")
     return _return_response(request, decision_id)
+
+
+WEBHOOK_MAX_BYTES = 64 * 1024
+# Generous: PayPal sends a few events per purchase and retries failures
+webhook_limiter = PurchaseLimiter(per_ip=120, per_ip_window=60, overall=20000, overall_window=86400)
+
+
+async def _read_capped_body(request, limit):
+    """The raw body, or None if it exceeds limit bytes (checked while reading, not just by header)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > limit:
+            return None
+    return bytes(body)
+
+
+@app.post("/paypal/webhook/{shop_key}")
+async def paypal_webhook(shop_key: str, request: Request):
+    """Verified PayPal webhooks: confirm and reconcile only, never move money or change a decision.
+
+    No access key (PayPal can't send one): every event is verified with PayPal
+    using the shop's own credentials and webhook ID, and only SUCCESS is accepted.
+    """
+    if shop_key not in paypal_client.SHOPS:
+        raise HTTPException(status_code=404, detail="Unknown shop")
+    refusal = webhook_limiter.check(client_ip(request), bucket="webhook")
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
+    raw = await _read_capped_body(request, WEBHOOK_MAX_BYTES)
+    if raw is None:
+        webhooks.reject("too_large")
+        raise HTTPException(status_code=413, detail="Webhook body too large")
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        event = None
+    if not isinstance(event, dict) or not isinstance(event.get("id"), str) or not event["id"]             or not isinstance(event.get("event_type"), str) or not event["event_type"]:
+        webhooks.reject("malformed")
+        raise HTTPException(status_code=400, detail="Malformed webhook event")
+    try:
+        verified = await run_in_threadpool(paypal_client.verify_webhook_signature, shop_key, request.headers, event)
+    except ValueError:
+        # Missing signature headers or no webhook ID configured for this shop: fail closed
+        webhooks.reject("not_verifiable")
+        raise HTTPException(status_code=400, detail="Webhook could not be verified")
+    except Exception:
+        webhooks.reject("verify_error")
+        raise HTTPException(status_code=400, detail="Webhook could not be verified")
+    if not verified:
+        webhooks.reject("signature_failed")
+        raise HTTPException(status_code=400, detail="Webhook signature not verified")
+    stored = await run_in_threadpool(webhooks.handle_verified_event, event, shop_key)
+    return JSONResponse({"status": "stored" if stored else "duplicate"})
+
+
+@app.get("/orders/{order_id}/confirmations")
+def order_confirmations(order_id: str):
+    """Verified PayPal events for an order. Reachable by the unguessable order ID, like the result page."""
+    if audit.get_purchase_by_order(order_id) is None and audit.get_decision_id_by_order(order_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown order")
+    return webhooks.confirmations(order_id)
 
 
 @app.get("/paypal/cancel")

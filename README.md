@@ -128,6 +128,7 @@ PayPal REST API, called with `requests` (no SDK), sandbox only.
 | `GET /v2/checkout/orders/{id}` | read amount, currency and payee merchant ID back from PayPal for the rule checks |
 | `POST /v2/payments/authorizations/{id}/capture` | allow, or a held payment the user approves |
 | `POST /v2/payments/authorizations/{id}/void` | block, or a held payment the user rejects |
+| `POST /v1/notifications/verify-webhook-signature` | verify every incoming webhook with the shop's own app |
 
 `scripts/paypal_test.py` additionally uses `POST /v2/checkout/orders/{id}/capture` for CAPTURE-intent test orders.
 
@@ -136,6 +137,16 @@ PayPal REST API, called with `requests` (no SDK), sandbox only.
 **Idempotency.** Every POST sends a new `PayPal-Request-Id` (UUID4).
 
 **Own audit log.** After an authorization is voided, the order itself still shows status `COMPLETED` in PayPal. The order status alone does not tell you whether money moved, so the app keeps its own audit log of every decision and every capture, void and user action.
+
+### Webhooks: confirmation and reconciliation
+
+PayPal webhooks confirm what PayPal did. They never move money and never change a firewall decision.
+
+- **Setup:** one webhook per shop app, pointing at `https://<host>/paypal/webhook/<shop_key>` (`techmart`, `gadgethub` or `techmartdeals`), subscribed to at least `CHECKOUT.ORDER.APPROVED`, `PAYMENT.AUTHORIZATION.CREATED`, `PAYMENT.AUTHORIZATION.VOIDED`, `PAYMENT.CAPTURE.COMPLETED` and `PAYMENT.CAPTURE.DENIED`. Put each webhook's ID in `PAYPAL_<SHOP>_WEBHOOK_ID`. A shop without one has all its webhooks rejected.
+- **What is verified:** every event goes to `POST /v1/notifications/verify-webhook-signature` with that shop's credentials, its webhook ID, the five `PAYPAL-*` signature headers and the event itself. Only `verification_status: SUCCESS` is accepted. Missing headers, a missing webhook ID, a verification error or any other status returns 400, and only a counter is kept: an unverified body is never stored. Bodies over 64 KB return 413, and calls are rate limited to 120 per minute per IP.
+- **Duplicate protection:** verified events go into the append-only `webhook_events` table with a unique `event_id`. PayPal retries, so a repeated event returns 200 and is not stored twice.
+- **Reconciliation:** each event is matched to a decision by authorization ID, then order ID, and marked `match`, `mismatch`, `info` or `unmatched`. A capture for a payment the firewall blocked or the user rejected, or a void for one it captured, is a mismatch: it is recorded and logged as a warning, and the result page shows a red notice. Other event types are stored with their type, not dropped. The result page's "PayPal confirmation" section polls `GET /orders/{order_id}/confirmations` every 5 seconds for up to 2 minutes.
+- **Testing:** the Developer Dashboard's webhook simulator sends sample events that cannot pass signature verification, so they are rejected by design. Test with real sandbox purchases instead.
 
 ## AI usage
 
