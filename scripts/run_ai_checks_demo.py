@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.catalog import Product, get_product, list_shops  # noqa: E402
-from app.firewall_ai import check_intent, scan_page_llm_judge, scan_page_prompt_guard  # noqa: E402
+from app.firewall_ai import JUDGES, check_intent, scan_page_llm_judge, scan_page_prompt_guard  # noqa: E402
 from app.shop_pages import page_text_for_agent  # noqa: E402
 
 INSTRUCTION = "Buy me a phone case for my 6.1-inch phone."
@@ -32,7 +32,8 @@ def main():
     for shop_key, _ in list_shops():
         page = page_text_for_agent(shop_key)
         calls.append((shop_key, lambda k=shop_key, p=page: scan_page_prompt_guard(k, p)))
-        calls.append((shop_key, lambda k=shop_key, p=page: scan_page_llm_judge(k, p)))
+        for detector in JUDGES:
+            calls.append((shop_key, lambda k=shop_key, p=page, d=detector: scan_page_llm_judge(k, p, d)))
     for product in (get_product("gh-case-01"), get_product("tmd-case-01"), WALLET):
         calls.append((product.product_id, lambda p=product: check_intent(INSTRUCTION, p)))
 

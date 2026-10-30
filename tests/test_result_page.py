@@ -221,3 +221,13 @@ def test_amounts_use_the_same_format_in_both_columns():
 def test_result_page_loads_status_messages_before_result_js():
     page = render_result_page(make_row(decision="hold", actions=[{"action": "held", "detail": ""}]))
     assert page.index("/static/status_messages.js") < page.index("/static/result.js")
+
+
+def test_second_opinion_judges_have_plain_names():
+    ai = [ai_finding("page_injection[techmart]", True, "llm_judge_a"),
+          ai_finding("page_injection[techmart]", False, "llm_judge_b")]
+    page = render_result_page(make_row(ai=ai))
+    assert "<td>LLM judge A (security analyst)</td>" in page
+    assert "<td>LLM judge B (content moderator)</td>" in page
+    groups = ai_groups(page)
+    assert groups == [("page_injection[techmart]", True, "FLAGGED TechMart's page: 1 of 2 flagged")]

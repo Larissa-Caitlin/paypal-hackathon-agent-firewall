@@ -4,7 +4,7 @@ Calls firewall.evaluate() directly with simulated PayPal order data built from
 real merchant IDs. No PayPal calls, no agent, no audit-log writes. AI checks
 make real LLM calls.
 
-Usage: python scripts/run_attacks.py [--runs N]
+Usage: python scripts/run_attacks.py [--runs N] [--output NAME]
 """
 
 import argparse
@@ -26,12 +26,14 @@ from app.firewall_ai import PROMPT_GUARD_MODEL  # noqa: E402
 from app.paypal_client import OrderInfo  # noqa: E402
 
 CASES_PATH = ROOT / "attacks" / "cases.json"
-RESULTS_JSON = ROOT / "results" / "phase5_attack_results.json"
-RESULTS_MD = ROOT / "results" / "phase5_attack_results.md"
+RESULTS_DIR = ROOT / "results"
+DEFAULT_OUTPUT = "phase5_attack_results"
 PAUSE = 3  # seconds between cases, for Groq rate limits
 FAILSAFE_PREFIX = "Check could not be completed"
 AI_DETECTOR_NAMES = {"llm_intent": "intent"}  # display names used in expected_layer
-INJECTION_DETECTORS = ("prompt_guard", "llm_judge")
+# Every LLM judge (llm_judge_a, llm_judge_b) also counts as the "llm_judge" layer in expected_layer
+JUDGE_LAYER = "llm_judge"
+INJECTION_DETECTORS = ("prompt_guard", "llm_judge_a", "llm_judge_b")
 
 
 @contextmanager
@@ -88,6 +90,8 @@ def run_once(case):
 
 def layer_caught(expected_layer, catchers):
     """'a+b' needs all of them, 'a|b' needs any; 'none' means nothing should catch it."""
+    if any(c.startswith(JUDGE_LAYER) for c in catchers):
+        catchers = set(catchers) | {JUDGE_LAYER}
     if expected_layer == "none":
         return not catchers
     if "+" in expected_layer:
@@ -141,7 +145,7 @@ def totals(rows, n_runs):
     attacks = [r for r in rows if r["expected"] != "allow"]
     benign = [r for r in rows if r["expected"] == "allow"]
     stopped = [r for r in attacks if all(d != "allow" for d in r["decisions"])]
-    injection = [r for r in rows if any(d in r["expected_layer"].split("|") for d in INJECTION_DETECTORS)]
+    injection = [r for r in rows if any(d in r["expected_layer"].split("|") for d in ("prompt_guard", JUDGE_LAYER))]
     detector_lines = []
     for det in INJECTION_DETECTORS:
         every = sum(all(det in run["ai_flagged"] for run in r["runs"]) for r in injection)
@@ -187,15 +191,16 @@ def totals_text(t):
     )
 
 
-def write_markdown(rows, t, n_runs, model, date):
+def write_markdown(path, rows, t, n_runs, model, date, output):
     _, header, lines = table(rows)
     md = [
         "# Phase 5: Attack test set results",
         "",
         f"- **Date:** {date}",
-        f"- **Model:** `{model}` (LLM judge and intent check); `{PROMPT_GUARD_MODEL}` (Prompt Guard)",
+        f"- **Model:** `{model}` (LLM judges A and B, intent check); `{PROMPT_GUARD_MODEL}` (Prompt Guard)",
         f"- **Cases:** {len(rows)} from `attacks/cases.json`, {n_runs} run(s) each",
-        f"- **Command:** `python scripts/run_attacks.py --runs {n_runs}`",
+        f"- **Command:** `python scripts/run_attacks.py --runs {n_runs}"
+        + (f" --output {output}`" if output != DEFAULT_OUTPUT else "`"),
         "",
         "## Results",
         "",
@@ -212,16 +217,18 @@ def write_markdown(rows, t, n_runs, model, date):
         "- Firewall-level evaluation: `firewall.evaluate()` is called directly with simulated PayPal "
         "order data built from real sandbox merchant IDs. The agent and PayPal are not involved.",
         f"- {n_runs} run(s) per case, so rates are coarse.",
-        "- One LLM model for the judge and intent checks, and one Prompt Guard model.",
+        "- One LLM model for both judges and the intent check, and one Prompt Guard model.",
         "- Hand-written attack cases, one variant per technique.",
         "",
     ]
-    RESULTS_MD.write_text("\n".join(md), encoding="utf-8")
+    path.write_text("\n".join(md), encoding="utf-8")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run the firewall attack test set.")
     parser.add_argument("--runs", type=int, default=3, help="runs per case (default 3)")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT,
+                        help=f"base name of the result files in results/ (default {DEFAULT_OUTPUT})")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -247,8 +254,10 @@ def main():
     print(totals_text(t))
 
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    RESULTS_JSON.parent.mkdir(exist_ok=True)
-    RESULTS_JSON.write_text(
+    results_json = RESULTS_DIR / f"{args.output}.json"
+    results_md = RESULTS_DIR / f"{args.output}.md"
+    RESULTS_DIR.mkdir(exist_ok=True)
+    results_json.write_text(
         json.dumps(
             {"date": date, "model": model, "prompt_guard_model": PROMPT_GUARD_MODEL, "runs_per_case": args.runs,
              "totals": t, "cases": rows},
@@ -256,9 +265,9 @@ def main():
         ),
         encoding="utf-8",
     )
-    write_markdown(rows, t, args.runs, model, date)
+    write_markdown(results_md, rows, t, args.runs, model, date, args.output)
     print()
-    print(f"Wrote {RESULTS_JSON} and {RESULTS_MD}")
+    print(f"Wrote {results_json} and {results_md}")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,9 @@ RESOLVED = {"user_approved", "user_rejected"}
 STAGES = ["Agent shops", "Proposal", "PayPal hold", "Firewall check"]
 DETECTOR_LABELS = {
     "prompt_guard": "Injection classifier (Prompt Guard)",
-    "llm_judge": "LLM judge",
+    "llm_judge": "LLM judge",  # single judge, in decisions logged before the second opinion
+    "llm_judge_a": "LLM judge A (security analyst)",
+    "llm_judge_b": "LLM judge B (content moderator)",
     "llm_intent": "Intent check",
 }
 PAGE_CHECK = re.compile(r"^page_injection\[(.*)\]$")
