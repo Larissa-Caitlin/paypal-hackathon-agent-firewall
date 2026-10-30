@@ -283,7 +283,7 @@ tests/               pytest suite (no PayPal or LLM calls)
 
 ## About
 
-Built for the PayPal AI Hackathon, during the submission period. Development used Claude Code as a coding assistant.
+Built for the PayPal AI Hackathon, during the submission period. 
 
 ### Credits
 
