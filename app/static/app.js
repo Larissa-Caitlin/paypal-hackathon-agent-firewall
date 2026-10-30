@@ -21,6 +21,13 @@
   const blockedCard = document.getElementById("blocked-card");
   const blockedReasons = document.getElementById("blocked-reasons");
 
+  const serverStatus = document.getElementById("server-status");
+
+  // The agent can take a minute, plus up to a minute for a sleeping instance to start
+  const PURCHASE_TIMEOUT_MS = 150000;
+  const WAKE_RETRY_MS = 5000;
+  const WAKE_GIVE_UP_MS = 120000;
+
   const STAGES = ["Agent shops", "Proposal", "PayPal hold", "Firewall check", "Result"];
 
   // Cosmetic only: the server does not report progress while the agent runs.
@@ -273,9 +280,59 @@
     };
   }
 
+  // POST /purchase. Resolves to { status, data }; status 0 means no response
+  // (network error or timeout), e.g. while a sleeping free instance starts up.
+  async function postPurchase(body) {
+    const controller = new AbortController();
+    const timer = setTimeout(function () { controller.abort(); }, PURCHASE_TIMEOUT_MS);
+    try {
+      const resp = await fetch("/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Demo-Key": accessKey },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const data = await resp.json().catch(function () { return {}; });
+      return { status: resp.status, data: data };
+    } catch (e) {
+      return { status: 0, data: {} };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Start waking the server as soon as the page opens; the form stays usable.
+  async function wakeServer() {
+    const deadline = Date.now() + WAKE_GIVE_UP_MS;
+    serverStatus.textContent = "Waking up the server...";
+    serverStatus.className = "server-status server-waking";
+    while (Date.now() < deadline) {
+      try {
+        const resp = await fetch("/health", { cache: "no-store" });
+        if (resp.ok) {
+          serverStatus.textContent = "Server ready";
+          serverStatus.className = "server-status server-ready";
+          return;
+        }
+      } catch (e) {
+        // Not up yet; try again
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, WAKE_RETRY_MS); });
+    }
+    serverStatus.textContent = "The server is not responding yet. It may still be waking up.";
+    serverStatus.className = "server-status server-down";
+  }
+
+  wakeServer();
+
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
-    accessKey = document.getElementById("access-key").value;
+    // Read at submit time, so a pasted or autofilled key is always the current one
+    accessKey = cleanKey(document.getElementById("access-key").value);
+    if (!accessKey) {
+      setStatus("Enter the access key.", true);
+      return;
+    }
     const scenario = form.querySelector('input[name="scenario"]:checked');
     const body = {
       instruction: document.getElementById("instruction").value,
@@ -291,28 +348,18 @@
     results.hidden = false;
     const stopLoading = startLoading();
 
-    try {
-      const catalogReady = loadCatalog();
-      const resp = await fetch("/purchase", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Demo-Key": accessKey },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json().catch(function () { return {}; });
-      await catalogReady;
-      stopLoading();
-      if (resp.status === 401) {
-        results.hidden = true;
-        setStatus("The access key is missing or wrong.", true);
-        return;
-      }
-      if (!resp.ok) {
-        results.hidden = true;
-        const detail = typeof data.detail === "string" ? data.detail : "Request failed (HTTP " + resp.status + ")";
-        setStatus(detail, true);
-        return;
-      }
+    const catalogReady = loadCatalog();
+    const response = await postPurchase(body);
+    await catalogReady;
+    stopLoading();
+    const data = response.data;
+    if (response.status !== 200) {
+      results.hidden = true;
+      setStatus(errorMessage(response.status, data.detail), true);
+      return;
+    }
 
+    try {
       const hiddenFound = await renderTrace(data.trace || []);
       renderAlert(hiddenFound);
       if (data.approve_url && data.proposal) {
@@ -325,8 +372,7 @@
         setStatus("");
       }
     } catch (e) {
-      stopLoading();
-      setStatus("Could not reach the server.", true);
+      setStatus("Could not display the agent's result.", true);
     }
   });
 })();

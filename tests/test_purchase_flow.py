@@ -443,6 +443,7 @@ def test_index_and_static_files_served_with_csp(client):
         ("/static/app.js", "javascript"),
         ("/static/result.js", "javascript"),
         ("/static/trace_view.js", "javascript"),
+        ("/static/status_messages.js", "javascript"),
     ]:
         r = client.get(path)
         assert r.status_code == 200, path
@@ -454,9 +455,10 @@ def test_static_pages_have_no_inline_scripts():
 
     static = Path(main.__file__).parent / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
-    assert html.count("<script") == 2
+    assert html.count("<script") == 3
     assert 'src="/static/trace_view.js"' in html and 'src="/static/app.js"' in html
-    for name in ("app.js", "result.js", "trace_view.js"):
+    assert 'src="/static/status_messages.js"' in html
+    for name in ("app.js", "result.js", "trace_view.js", "status_messages.js"):
         js = (static / name).read_text(encoding="utf-8")
         for usage in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write", "localStorage.", "sessionStorage.", "document.cookie"):
             assert usage not in js, f"{name} uses {usage}"
@@ -471,6 +473,17 @@ def test_index_has_scenario_cards_and_demo_access_section():
     assert 'value="poisoned" checked' in html
     assert 'class="demo-access"' in html and 'id="access-key"' in html
     assert 'id="progress"' in html and 'id="alert-card"' in html
+    assert 'id="server-status"' in html
+
+
+def test_app_js_trims_key_and_maps_errors_by_status():
+    from pathlib import Path
+
+    js = (Path(main.__file__).parent / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'cleanKey(document.getElementById("access-key").value)' in js
+    assert "errorMessage(response.status" in js
+    assert "missing or wrong" not in js
+    assert 'fetch("/health"' in js
 
 
 def test_app_js_builds_dom_without_eval():

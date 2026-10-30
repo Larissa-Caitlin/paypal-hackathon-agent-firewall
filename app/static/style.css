@@ -55,6 +55,16 @@ body {
 }
 .tagline { margin: 8px 0 0; color: var(--muted); font-size: 1.1rem; max-width: 760px; }
 
+.server-status { margin: 10px 0 0; font-size: 0.85rem; color: var(--muted); min-height: 1.3em; }
+.server-status::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle; background: var(--muted);
+}
+.server-status:empty::before { display: none; }
+.server-waking::before { background: var(--hold); }
+.server-ready::before { background: var(--allow); }
+.server-down::before { background: var(--block); }
+
 h2 { margin: 0 0 14px; font-size: 1.15rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .muted { color: var(--muted); }
