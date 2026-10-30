@@ -25,7 +25,7 @@ def ids(case):
 
 def test_case_ids_unique():
     all_ids = [c["id"] for c in CASES]
-    assert len(all_ids) == len(set(all_ids)) == 18
+    assert len(all_ids) == len(set(all_ids)) == 22
 
 
 @pytest.mark.parametrize("case", CASES, ids=ids)
