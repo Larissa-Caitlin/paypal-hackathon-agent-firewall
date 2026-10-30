@@ -215,9 +215,26 @@ textarea { resize: vertical; }
 .stage-done .stage-label::before { content: "\2713  "; color: var(--allow); }
 .stage-current { color: var(--text); border-color: var(--accent); background: rgba(90, 169, 255, 0.10); }
 .stage-skipped { opacity: 0.45; text-decoration: line-through; }
-.stage-result.stage-allow { color: #07140a; background: var(--allow); border-color: var(--allow); }
-.stage-result.stage-block { color: #1a0505; background: var(--block); border-color: var(--block); }
-.stage-result.stage-hold { color: #1a1203; background: var(--hold); border-color: var(--hold); }
+/* Final stage: a status badge in the verdict colour, outlined with a dot, not a filled button */
+.stage-result.stage-allow, .stage-result.stage-block, .stage-result.stage-hold {
+  background: transparent;
+  border-width: 1.5px;
+  border-color: currentColor;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  cursor: default;
+}
+.stage-result.stage-allow { color: var(--allow); }
+.stage-result.stage-block { color: var(--block); }
+.stage-result.stage-hold { color: var(--hold); }
+.stage-result.stage-allow .stage-label::before,
+.stage-result.stage-block .stage-label::before,
+.stage-result.stage-hold .stage-label::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle; background: currentColor;
+}
 @media (max-width: 600px) { .stage { flex-basis: 40%; } }
 
 /* Trust tags */

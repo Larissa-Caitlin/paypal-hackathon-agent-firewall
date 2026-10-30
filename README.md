@@ -285,6 +285,10 @@ tests/               pytest suite (no PayPal or LLM calls)
 
 Built for the PayPal AI Hackathon, during the submission period. Development used Claude Code as a coding assistant.
 
+### Credits
+
+**Built with Llama.** The injection classifier is Llama Prompt Guard 2 (86M) by Meta, called via Groq. See the [model card](https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M); it is licensed under the [Llama 4 Community License](https://www.llama.com/llama4/license/).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -112,11 +112,22 @@ def _claimed_shop(shop_key):
 
 
 def _expected_payee(shop_key):
-    """The account a payment to the agent's chosen shop should go to, per platform policy."""
+    """The account a payment to the agent's chosen shop should go to, per platform policy.
+
+    The agent never names a payee; this is what its choice of shop implies.
+    """
+    name = _shop_name(shop_key) or shop_key or "this shop"
     merchant_id = ALLOWED_MERCHANTS.get(shop_key)
     if not merchant_id:
-        return '<span class="muted">no approved PayPal account</span>'
-    return f'<span class="mono">{_e(merchant_id)}</span> ({_e(_possessive(_shop_name(shop_key) or shop_key))} account)'
+        return f'<span class="muted">No approved account for {_e(name)}</span>'
+    return (
+        f'<span class="muted">Expected: <span class="mono">{_e(merchant_id)}</span> '
+        f"({_e(_possessive(name))} approved account)</span>"
+    )
+
+
+def _money(value):
+    return f"${_e(value)}" if value else '<span class="muted">none</span>'
 
 
 def _same_amount(a, b):
@@ -145,14 +156,12 @@ def _comparison(row):
         order_shop = f'{_e(_shop_name(payee_shop) or payee_shop)} <span class="muted">(owns the payee account)</span>'
     else:
         order_shop = '<span class="payee-unapproved">not an approved shop</span>'
-    claimed_amount = f"${_e(row['agent_claimed_amount'])}" if row["agent_claimed_amount"] else '<span class="muted">none</span>'
-    order_amount = _e(row["paypal_amount"]) if row["paypal_amount"] else '<span class="muted">none</span>'
     order_currency = _e(row["paypal_currency"]) if row["paypal_currency"] else '<span class="muted">none</span>'
     expected = ALLOWED_MERCHANTS.get(shop_key)
 
     rows = [
         ("Shop", _claimed_shop(shop_key), order_shop, payee_shop is not None and payee_shop == shop_key),
-        ("Amount", claimed_amount, order_amount, _same_amount(row["agent_claimed_amount"], row["paypal_amount"])),
+        ("Amount", _money(row["agent_claimed_amount"]), _money(row["paypal_amount"]),_same_amount(row["agent_claimed_amount"], row["paypal_amount"])),
         ("Currency", "USD", order_currency, row["paypal_currency"] == "USD"),
         ("Paid to", _expected_payee(shop_key), _payee(payee), bool(expected) and expected == payee),
     ]
@@ -320,6 +329,7 @@ def render_result_page(row) -> str:
     {_ai_groups(ai)}
   </section>
 </main>
+<script src="/static/status_messages.js" defer></script>
 <script src="/static/result.js" defer></script>
 </body>
 </html>

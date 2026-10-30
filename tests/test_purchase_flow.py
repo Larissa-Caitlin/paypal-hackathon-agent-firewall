@@ -571,8 +571,9 @@ def test_result_page_escapes_untrusted_text(client, monkeypatch):
 
     assert XSS not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
-    # The only script element is our own external file
-    assert page.count("<script") == 1
+    # The only script elements are our own external files
+    assert page.count("<script") == 2
+    assert '<script src="/static/status_messages.js" defer></script>' in page
     assert '<script src="/static/result.js" defer></script>' in page
 
 

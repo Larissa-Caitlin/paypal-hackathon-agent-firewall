@@ -99,7 +99,7 @@ def test_comparison_table_flags_unapproved_shop():
     assert matches(page) == {"Shop": "no", "Amount": "yes", "Currency": "yes", "Paid to": "no"}
     rows = compare_rows(page)
     assert "TechMart Deals" in rows["Shop"][0]
-    assert "no approved PayPal account" in rows["Paid to"][0]
+    assert "No approved account for TechMart Deals" in rows["Paid to"][0]
 
 
 def test_comparison_table_flags_amount_and_currency():
@@ -205,3 +205,19 @@ def test_progress_skips_hold_and_check_without_authorization():
     stages = re.findall(r'<li class="stage stage-(\w+)"><span class="stage-label">([^<]+)<', page)
     assert stages == [("done", "Agent shops"), ("done", "Proposal"), ("skipped", "PayPal hold"), ("skipped", "Firewall check")]
     assert result_stage(page) == ("block", "Error")
+
+
+def test_paid_to_shows_expected_account_not_an_agent_claim():
+    claimed = compare_rows(render_result_page(make_row()))["Paid to"][0]
+    assert claimed.startswith('<span class="muted">Expected: ')
+    assert TECHMART_ID in claimed and "(TechMart&#x27;s approved account)" in claimed
+
+
+def test_amounts_use_the_same_format_in_both_columns():
+    rows = compare_rows(render_result_page(make_row(amount="15.00", paypal_amount="15.00")))
+    assert rows["Amount"][0] == rows["Amount"][1] == "$15.00"
+
+
+def test_result_page_loads_status_messages_before_result_js():
+    page = render_result_page(make_row(decision="hold", actions=[{"action": "held", "detail": ""}]))
+    assert page.index("/static/status_messages.js") < page.index("/static/result.js")
