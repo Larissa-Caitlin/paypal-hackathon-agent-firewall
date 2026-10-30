@@ -125,3 +125,31 @@ def test_possessive():
         "TechMart's",
         "TechMart Deals'",
     ]
+
+
+def test_detector_labels_match_result_page():
+    from app.result_page import DETECTOR_LABELS
+
+    for detector, label in DETECTOR_LABELS.items():
+        assert run_helper("helpers.detectorLabel(input.d)", {"d": detector}) == label
+    assert run_helper("helpers.detectorLabel('something_new')", {}) == "something_new"
+
+
+def test_ai_group_titles():
+    assert run_helper(
+        "[helpers.aiGroupTitle('intent', input.names), helpers.aiGroupTitle('page_injection[techmartdeals]', input.names),"
+        " helpers.aiGroupTitle('page_injection[nope]', input.names)]",
+        {"names": SHOP_NAMES},
+    ) == ["Product vs your request", "TechMart Deals' page", "nope's page"]
+
+
+def test_ai_groups_flagged_first_then_in_order():
+    ai = [
+        {"check": "page_injection[techmart]", "flagged": False},
+        {"check": "page_injection[techmartdeals]", "flagged": False},
+        {"check": "page_injection[techmart]", "flagged": False},
+        {"check": "page_injection[techmartdeals]", "flagged": True},
+        {"check": "intent", "flagged": False},
+    ]
+    groups = run_helper("helpers.groupAiFindings(input.ai).map(g => [g.check, g.findings.length])", {"ai": ai})
+    assert groups == [["page_injection[techmartdeals]", 2], ["page_injection[techmart]", 2], ["intent", 1]]

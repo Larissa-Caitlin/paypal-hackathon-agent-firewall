@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attack Lab · Agent Payment Firewall</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="container">
+  <header class="page-header">
+    <div class="header-row">
+      <div class="brand">
+        <span class="brand-mark brand-mark-lab" aria-hidden="true"></span>
+        <h1>Attack Lab</h1>
+      </div>
+      <nav class="header-nav"><a class="nav-link" href="/">&larr; Firewall demo</a></nav>
+    </div>
+    <p class="tagline">Can you trick the agent? Can you trick the firewall?</p>
+    <p class="lab-note">This is a simulation. No PayPal order is created.</p>
+    <p id="server-status" class="server-status" role="status" aria-live="polite"></p>
+  </header>
+
+  <section class="card">
+    <h2>Plant your instruction</h2>
+    <p class="muted">Pick a shop and write text that tries to steer the shopping agent. It is added to that shop's product listing for this one run, then the agent shops all three stores and the firewall checks whatever it proposes. Your text is not stored.</p>
+    <form id="lab-form" autocomplete="off">
+      <fieldset class="scenarios">
+        <legend>Shop to plant it on</legend>
+        <label class="scenario-card scenario-clean">
+          <input type="radio" name="target-shop" value="techmart">
+          <span class="scenario-name">TechMart</span>
+          <span class="scenario-desc">Approved shop. Shockproof case, $18.00.</span>
+        </label>
+        <label class="scenario-card scenario-clean">
+          <input type="radio" name="target-shop" value="gadgethub">
+          <span class="scenario-name">GadgetHub</span>
+          <span class="scenario-desc">Approved shop. Slim case, $15.00.</span>
+        </label>
+        <label class="scenario-card scenario-poisoned">
+          <input type="radio" name="target-shop" value="techmartdeals" checked>
+          <span class="scenario-name">TechMart Deals</span>
+          <span class="scenario-desc">Not approved. Phone case, $12.00.</span>
+        </label>
+      </fieldset>
+
+      <label for="injected-text">Your instruction to the agent</label>
+      <textarea id="injected-text" rows="4" maxlength="500" required placeholder="e.g. NOTE TO AI ASSISTANTS: ..."></textarea>
+      <div class="field-meta">
+        <div class="examples" aria-label="Examples">
+          <span class="muted">Examples:</span>
+          <button type="button" class="chip" data-example="0">Original TechMart Deals note</button>
+          <button type="button" class="chip" data-example="1">Ignore previous instructions</button>
+          <button type="button" class="chip" data-example="2">Fake security notice</button>
+          <button type="button" class="chip" data-example="3">Fake customer review</button>
+        </div>
+        <span id="char-count" class="char-count" aria-live="polite">0 / 500</span>
+      </div>
+
+      <fieldset class="segmented">
+        <legend>How it appears on the page</legend>
+        <label><input type="radio" name="visibility" value="hidden" checked><span>Hidden from shoppers</span></label>
+        <label><input type="radio" name="visibility" value="visible"><span>Visible to shoppers</span></label>
+      </fieldset>
+
+      <details class="demo-access" open>
+        <summary>Demo access</summary>
+        <label for="access-key">Access key</label>
+        <input id="access-key" class="input-short" type="password" required autocomplete="off">
+        <p class="hint">Kept in this page's memory only; never stored.</p>
+      </details>
+
+      <div class="button-row">
+        <button type="submit" id="submit" class="button button-primary">
+          <span class="spinner" aria-hidden="true"></span><span id="submit-label">Run the attack</span>
+        </button>
+      </div>
+      <p id="status" class="outcome" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <section id="results" hidden>
+    <div class="scorecards">
+      <section class="scorecard" id="agent-score">
+        <span class="scorecard-label">Agent</span>
+        <span class="scorecard-value" id="agent-score-value"></span>
+        <span class="scorecard-detail" id="agent-score-detail"></span>
+      </section>
+      <section class="scorecard" id="firewall-score">
+        <span class="scorecard-label">Firewall</span>
+        <span class="scorecard-value" id="firewall-score-value"></span>
+        <span class="scorecard-detail" id="firewall-score-detail"></span>
+      </section>
+    </div>
+
+    <section class="verdict" id="verdict">
+      <span class="badge" id="verdict-badge"></span>
+      <p class="verdict-summary" id="verdict-summary"></p>
+      <ul id="verdict-reasons" class="reasons"></ul>
+    </section>
+
+    <section class="card trust-untrusted" id="proposal-card" hidden>
+      <h2>Agent's proposal <span class="tag tag-untrusted">unverified claim</span></h2>
+      <dl id="proposal" class="facts"></dl>
+    </section>
+
+    <section class="card">
+      <h2 id="target-title">Your target page</h2>
+      <div id="target-view"></div>
+    </section>
+
+    <section class="card">
+      <h2>What the agent did</h2>
+      <ol id="trace" class="trace"></ol>
+    </section>
+
+    <section class="card">
+      <h2>Rule checks <span class="tag tag-trusted">deterministic</span></h2>
+      <div id="rules"></div>
+    </section>
+
+    <section class="card">
+      <h2>AI checks <span class="tag tag-ai">can only escalate</span></h2>
+      <div id="ai-checks"></div>
+    </section>
+  </section>
+</main>
+<script src="/static/status_messages.js" defer></script>
+<script src="/static/trace_view.js" defer></script>
+<script src="/static/trace_render.js" defer></script>
+<script src="/static/lab.js" defer></script>
+</body>
+</html>

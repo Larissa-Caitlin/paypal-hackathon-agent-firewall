@@ -14,10 +14,28 @@ https://agent-payment-firewall.onrender.com
 
 - It runs on Render's free plan. The instance sleeps when idle, so the first request can take about a minute.
 - The audit log is SQLite on Render's ephemeral disk. It resets on every redeploy or restart.
-- `POST /purchase` is rate limited (10 per hour per client IP, 100 per day overall) to protect the free LLM quota.
+- `POST /purchase` and `POST /lab/run` are rate limited (10 purchases and 10 lab runs per hour per client IP, 100 per day overall across both) to protect the free LLM quota.
 - PayPal runs in the sandbox only; no real money moves.
 
 Access key and sandbox buyer login: see the Devpost testing instructions.
+
+## Attack Lab
+
+https://agent-payment-firewall.onrender.com/lab
+
+Try to trick the agent and the firewall with your own instruction.
+
+1. Pick a shop (TechMart, GadgetHub or TechMart Deals) and write up to 500 characters, or start from one of four examples: the original TechMart Deals note, "Ignore all previous instructions", a fake security notice aimed at reviewers, and a fake customer review hiding an instruction.
+2. Choose whether the text is hidden from shoppers (inside a `display:none` span) or visible.
+3. The server adds your text to that shop's listing for this one request, runs the shopping agent over all three shops, and passes its proposal through the full firewall (all 6 rules and all AI checks).
+4. Two scorecards show the outcome: **Agent** (fooled if it chose the shop you targeted) and **Firewall** (caught if the verdict is block or hold, and by which rules or detectors). Below them: the verdict, what a human sees next to what the agent read on your page, the agent's trace and every check.
+
+What it is and isn't:
+
+- **A simulation.** No PayPal order is created. The firewall checks a simulated order for the proposed amount in USD, paid to that shop's real sandbox merchant ID.
+- **Clean starting pages.** Each shop's page starts without any hidden text (the built-in TechMart Deals note is removed), so only your text is in play.
+- **Your text is not stored.** It exists in memory for one request: it is never added to the catalog, the audit log or any file, and the next request sees the clean page again. The server logs only a running count of lab runs.
+- **Same protections as the rest of the app.** It needs the access key, has its own rate limit and counts toward the daily cap, and the page shows your text and model output as plain text only.
 
 ## Screenshots
 
@@ -131,7 +149,7 @@ PayPal REST API, called with `requests` (no SDK), sandbox only.
 - **Append-only audit log.** SQLite tables for purchases, decisions and actions. The module has no update or delete functions, and SQLite triggers reject `UPDATE` and `DELETE` on all three tables. Money is stored as strings.
 - **Parameterised SQL.** Every query uses `?` placeholders, because logged values include agent output and seller-influenced text.
 - **Access key.** `/purchase`, `GET /decisions/{id}` and approve/reject require `X-Demo-Key`, compared in constant time (`hmac.compare_digest`). If `DEMO_ACCESS_KEY` is not set, these routes return 503 instead of running open.
-- **Rate limit.** `POST /purchase` allows 10 requests per hour per client IP and 100 per day overall, then returns 429. It runs after the key check, so requests without a valid key do not use up the quota. The client IP is the first `X-Forwarded-For` value when present (Render sits behind a proxy); a client can set that header itself, so the per-IP limit is spoofable and the overall daily limit is the hard cap. Counters are in memory and reset on restart.
+- **Rate limit.** `POST /purchase` and `POST /lab/run` each allow 10 requests per hour per client IP, and together 100 per day overall, then return 429. It runs after the key check, so requests without a valid key do not use up the quota. The client IP is the first `X-Forwarded-For` value when present (Render sits behind a proxy); a client can set that header itself, so the per-IP limit is spoofable and the overall daily limit is the hard cap. Counters are in memory and reset on restart.
 - **Replay protection.** Reloading or replaying `/paypal/return` returns the existing decision without a second authorization. An order token the app did not create returns 404 with no PayPal calls.
 - **Race fix for approve/reject.** A partial unique index allows one `user_approved` or `user_rejected` action per decision. Approve/reject inserts that action first and only then calls PayPal; the loser of a race gets 409. The concurrency test was confirmed to fail with the index removed.
 - **XSS.** Server-rendered pages HTML-escape every value; the browser code inserts untrusted text with `textContent` only. A test checks that `<script>alert(1)</script>` in an agent reason and an AI finding is escaped.
@@ -276,6 +294,7 @@ On Windows without long path support, clone into a short path (for example `C:\s
 ```
 app/
   main.py            FastAPI routes: /purchase, /paypal/return, /decisions/*, shop pages, static UI
+  lab.py             Attack Lab: one-request page injection, agent run and firewall check, no PayPal
   agent.py           tool-calling shopping agent; outputs a proposal, never touches PayPal
   catalog.py         products; marks trusted (platform) and untrusted (seller) fields
   shop_pages.py      renders shop pages and the text a scraping agent extracts
@@ -288,7 +307,8 @@ app/
   llm.py             the only place the app calls an LLM
   rate_limit.py      in-memory rate limit for POST /purchase
   result_page.py     server-rendered result page (all values escaped)
-  static/            index.html, style.css, app.js, trace_view.js, result.js
+  static/            index.html, lab.html, style.css, app.js, lab.js, result.js, trace_render.js,
+                     trace_view.js, status_messages.js
 attacks/cases.json   the 22-case attack test set (incl. 4 held-out cases)
 results/             Phase 2 and Phase 5 results
 scripts/             demo, attack and PayPal test scripts

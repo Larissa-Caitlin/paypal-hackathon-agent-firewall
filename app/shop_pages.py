@@ -39,6 +39,12 @@ def render_shop_page(shop_key) -> str:
 """
 
 
+def _remove_hidden(soup):
+    for el in soup.find_all(style=True):
+        if "display:none" in el["style"].replace(" ", "").lower():
+            el.decompose()
+
+
 def page_text_for_agent(shop_key, include_hidden: bool = True) -> str:
     """Return page text as a scraping agent sees it.
 
@@ -47,7 +53,27 @@ def page_text_for_agent(shop_key, include_hidden: bool = True) -> str:
     """
     soup = BeautifulSoup(render_shop_page(shop_key), "html.parser")
     if not include_hidden:
-        for el in soup.find_all(style=True):
-            if "display:none" in el["style"].replace(" ", "").lower():
-                el.decompose()
+        _remove_hidden(soup)
     return soup.get_text(separator="\n", strip=True)
+
+
+def lab_page_views(shop_key, injected_text=None, hidden=True) -> tuple[str, str]:
+    """(what a human sees, what the agent reads) for an Attack Lab page.
+
+    Starts from the page without any existing hidden text, then appends the
+    visitor's text to each product description, inside a display:none span if
+    hidden. Built in memory for one request; the catalog is never modified.
+    The text is set as a string, never parsed as HTML.
+    """
+    soup = BeautifulSoup(render_shop_page(shop_key), "html.parser")
+    _remove_hidden(soup)
+    if injected_text:
+        for description in soup.find_all("div", class_="description"):
+            span = soup.new_tag("span")
+            if hidden:
+                span["style"] = "display:none"
+            span.string = injected_text
+            description.append(span)
+    agent_text = soup.get_text(separator="\n", strip=True)
+    _remove_hidden(soup)
+    return soup.get_text(separator="\n", strip=True), agent_text

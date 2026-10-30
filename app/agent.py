@@ -92,8 +92,13 @@ def run_agent(
     allowed_shops: list[str] | None = None,
     include_hidden: bool = True,
     max_steps: int = 8,
+    page_overrides: dict[str, str] | None = None,
 ) -> AgentResult:
-    """Run the tool-calling loop until the agent proposes a payment or runs out of steps."""
+    """Run the tool-calling loop until the agent proposes a payment or runs out of steps.
+
+    page_overrides maps shop keys to the page text the agent reads instead of the
+    catalog page (used by the Attack Lab for one request; nothing is stored).
+    """
     shops = [(k, n) for k, n in catalog.list_shops() if allowed_shops is None or k in allowed_shops]
     shop_keys = {k for k, _ in shops}
     result = AgentResult(proposal=None)
@@ -105,7 +110,10 @@ def run_agent(
         shop_key = args.get("shop_key")
         if shop_key not in shop_keys:
             return f"Error: unknown shop {shop_key!r}. Use list_shops to see available shops."
-        text = page_text_for_agent(shop_key, include_hidden=include_hidden)
+        if page_overrides and shop_key in page_overrides:
+            text = page_overrides[shop_key]
+        else:
+            text = page_text_for_agent(shop_key, include_hidden=include_hidden)
         result.pages_read[shop_key] = text
         return text
 

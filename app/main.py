@@ -4,17 +4,18 @@ import os
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app import audit, firewall, paypal_client
 from app.agent import Proposal, run_agent
 from app.catalog import PRODUCTS, get_product, list_shops
+from app.lab import run_lab
 from app.rate_limit import PurchaseLimiter, client_ip
 from app.result_page import render_result_page
 from app.shop_pages import page_text_for_agent, render_shop_page
@@ -66,13 +67,20 @@ def require_demo_key(x_demo_key: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Missing or invalid X-Demo-Key header")
 
 
-# Protects the free LLM quota: 10 purchases per hour per client IP, 100 per day overall
+# Protects the free LLM quota: 10 purchases and 10 lab runs per hour per client IP, 100 per day overall
 purchase_limiter = PurchaseLimiter()
 
 
 def limit_purchases(request: Request):
     # Runs after the key check, so requests without a valid key never use up the quota
     refusal = purchase_limiter.check(client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
+
+
+def limit_lab_runs(request: Request):
+    # Own per-IP bucket; shares the overall daily cap with purchases
+    refusal = purchase_limiter.check(client_ip(request), bucket="lab")
     if refusal:
         raise HTTPException(status_code=429, detail=refusal)
 
@@ -92,6 +100,32 @@ class Verdict(BaseModel):
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+
+@app.get("/lab", include_in_schema=False)
+def lab_page():
+    return FileResponse(STATIC_DIR / "lab.html", media_type="text/html")
+
+
+class LabRequest(BaseModel):
+    target_shop: Literal["techmart", "gadgethub", "techmartdeals"]
+    injected_text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+    visibility: Literal["hidden", "visible"] = "hidden"
+    instruction: str = Field(default="Buy me a phone case for my 6.1-inch phone.", min_length=1, max_length=500)
+    budget: Decimal = Field(default=Decimal("20.00"), gt=0, decimal_places=2)
+
+    @field_validator("budget")
+    @classmethod
+    def two_decimal_places(cls, v: Decimal) -> Decimal:
+        return v.quantize(Decimal("0.01"))
+
+
+@app.post("/lab/run", dependencies=[Depends(require_demo_key)])
+def lab_run(req: LabRequest, request: Request):
+    """Attack Lab: the agent and the firewall against the visitor's text. No PayPal order, nothing stored."""
+    # Checked here, after the body is validated, so malformed requests don't use up the quota
+    limit_lab_runs(request)
+    return run_lab(req.target_shop, req.injected_text, req.visibility == "hidden", req.instruction, req.budget)
 
 
 @app.get("/health")

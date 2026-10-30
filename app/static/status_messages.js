@@ -1,4 +1,5 @@
-// Pure helpers for request errors (no DOM), shared by app.js and the tests.
+// Helpers for request errors and server wake-up, shared by the pages and the tests.
+// cleanKey and errorMessage are pure; wakeServer only writes to the element it is given.
 "use strict";
 
 const WAKING_UP = "The server is waking up (free hosting). Wait about 30 seconds and try again.";
@@ -18,6 +19,30 @@ function errorMessage(status, detail) {
   return "Something went wrong (HTTP " + status + ").";
 }
 
+// Poll GET /health until the (possibly sleeping) server answers, showing progress in statusEl.
+async function wakeServer(statusEl, retryMs, giveUpMs) {
+  retryMs = retryMs || 5000;
+  const deadline = Date.now() + (giveUpMs || 120000);
+  statusEl.textContent = "Waking up the server...";
+  statusEl.className = "server-status server-waking";
+  while (Date.now() < deadline) {
+    try {
+      const resp = await fetch("/health", { cache: "no-store" });
+      if (resp.ok) {
+        statusEl.textContent = "Server ready";
+        statusEl.className = "server-status server-ready";
+        return true;
+      }
+    } catch (e) {
+      // Not up yet; try again
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, retryMs); });
+  }
+  statusEl.textContent = "The server is not responding yet. It may still be waking up.";
+  statusEl.className = "server-status server-down";
+  return false;
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { cleanKey: cleanKey, errorMessage: errorMessage };
+  module.exports = { cleanKey: cleanKey, errorMessage: errorMessage, wakeServer: wakeServer };
 }

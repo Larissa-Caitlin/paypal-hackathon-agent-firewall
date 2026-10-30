@@ -444,6 +444,9 @@ def test_index_and_static_files_served_with_csp(client):
         ("/static/result.js", "javascript"),
         ("/static/trace_view.js", "javascript"),
         ("/static/status_messages.js", "javascript"),
+        ("/static/trace_render.js", "javascript"),
+        ("/static/lab.js", "javascript"),
+        ("/lab", "text/html"),
     ]:
         r = client.get(path)
         assert r.status_code == 200, path
@@ -455,10 +458,10 @@ def test_static_pages_have_no_inline_scripts():
 
     static = Path(main.__file__).parent / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
-    assert html.count("<script") == 3
+    assert html.count("<script") == 4
     assert 'src="/static/trace_view.js"' in html and 'src="/static/app.js"' in html
-    assert 'src="/static/status_messages.js"' in html
-    for name in ("app.js", "result.js", "trace_view.js", "status_messages.js"):
+    assert 'src="/static/status_messages.js"' in html and 'src="/static/trace_render.js"' in html
+    for name in ("app.js", "result.js", "trace_view.js", "status_messages.js", "trace_render.js", "lab.js"):
         js = (static / name).read_text(encoding="utf-8")
         for usage in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write", "localStorage.", "sessionStorage.", "document.cookie"):
             assert usage not in js, f"{name} uses {usage}"
@@ -483,16 +486,19 @@ def test_app_js_trims_key_and_maps_errors_by_status():
     assert 'cleanKey(document.getElementById("access-key").value)' in js
     assert "errorMessage(response.status" in js
     assert "missing or wrong" not in js
-    assert 'fetch("/health"' in js
+    assert "wakeServer(serverStatus)" in js
 
 
 def test_app_js_builds_dom_without_eval():
-    # app.js builds every element with createElement/textContent
+    # The shared renderer builds every element with createElement/textContent
     from pathlib import Path
 
-    js = (Path(main.__file__).parent / "static" / "app.js").read_text(encoding="utf-8")
-    assert "textContent" in js and "createElement" in js
-    assert "eval(" not in js and "new Function" not in js
+    static = Path(main.__file__).parent / "static"
+    render = (static / "trace_render.js").read_text(encoding="utf-8")
+    assert "textContent" in render and "createElement" in render
+    for name in ("app.js", "lab.js", "trace_render.js"):
+        js = (static / name).read_text(encoding="utf-8")
+        assert "eval(" not in js and "new Function" not in js
 
 
 def test_catalog_exposes_only_platform_fields(client):

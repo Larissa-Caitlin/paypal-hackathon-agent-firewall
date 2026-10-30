@@ -1,4 +1,4 @@
-"""In-memory sliding-window rate limit for POST /purchase.
+"""In-memory sliding-window rate limit for POST /purchase and POST /lab/run.
 
 Protects the free LLM quota. State lives in this process only, so it resets on
 restart and is not shared between workers (the deployment runs one).
@@ -7,6 +7,9 @@ restart and is not shared between workers (the deployment runs one).
 import threading
 import time
 from collections import defaultdict, deque
+
+
+BUCKET_NOUNS = {"purchase": "purchases", "lab": "lab runs"}
 
 
 class PurchaseLimiter:
@@ -25,17 +28,22 @@ class PurchaseLimiter:
         while events and events[0] <= now - window:
             events.popleft()
 
-    def check(self, ip) -> str | None:
-        """Record a purchase attempt; return a refusal message if over a limit, else None."""
+    def check(self, ip, bucket="purchase") -> str | None:
+        """Record an attempt; return a refusal message if over a limit, else None.
+
+        Each bucket (purchases, lab runs) has its own per-IP limit; all buckets
+        share the overall daily cap.
+        """
+        noun = BUCKET_NOUNS.get(bucket, "requests")
         with self._lock:
             now = self.clock()
-            mine = self._by_ip[ip]
+            mine = self._by_ip[(bucket, ip)]
             self._prune(mine, now, self.per_ip_window)
             self._prune(self._all, now, self.overall_window)
             if len(mine) >= self.per_ip:
-                return f"Too many purchases: at most {self.per_ip} per hour from one address. Try again later."
+                return f"Too many {noun}: at most {self.per_ip} per hour from one address. Try again later."
             if len(self._all) >= self.overall:
-                return f"The demo has reached its limit of {self.overall} purchases per day. Try again tomorrow."
+                return f"The demo has reached its limit of {self.overall} runs per day. Try again tomorrow."
             mine.append(now)
             self._all.append(now)
             return None

@@ -25,8 +25,6 @@
 
   // The agent can take a minute, plus up to a minute for a sleeping instance to start
   const PURCHASE_TIMEOUT_MS = 150000;
-  const WAKE_RETRY_MS = 5000;
-  const WAKE_GIVE_UP_MS = 120000;
 
   const STAGES = ["Agent shops", "Proposal", "PayPal hold", "Firewall check", "Result"];
 
@@ -43,20 +41,11 @@
   let shopNames = {};
   let products = {};
 
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined && text !== null) node.textContent = String(text);
-    return node;
-  }
+  const el = TraceRender.el;
 
   function setStatus(text, isError) {
     statusEl.textContent = text;
     statusEl.classList.toggle("error", Boolean(isError));
-  }
-
-  function preText(text) {
-    return el("pre", "text", text);
   }
 
   async function loadCatalog() {
@@ -94,130 +83,15 @@
     });
   }
 
-  // Agent's text with lines a human can't see highlighted (see compareTexts).
-  function highlightedAgentText(lines) {
-    const pre = el("pre", "text");
-    lines.forEach(function (line, i) {
-      if (line.hidden) {
-        pre.appendChild(el("span", "injected", line.text));
-      } else {
-        pre.appendChild(document.createTextNode(line.text + (i < lines.length - 1 ? "\n" : "")));
-      }
-    });
-    return pre;
-  }
-
-  async function shopViews(shopKey) {
+  // What a human sees on a shop page, for the human-vs-agent comparison
+  async function visibleText(shopKey) {
     try {
       const resp = await fetch("/shops/" + encodeURIComponent(shopKey) + "/views");
       if (!resp.ok) return null;
-      return await resp.json();
+      return (await resp.json()).visible;
     } catch (e) {
       return null;
     }
-  }
-
-  // Show a page the agent read. Returns the lines hidden from humans (empty if none).
-  async function renderPageRead(li, shopKey, agentText) {
-    const views = await shopViews(shopKey);
-    if (!views) {
-      li.appendChild(preText(agentText));
-      return [];
-    }
-    const comparison = compareTexts(agentText, views.visible);
-    const hidden = comparison.lines.filter(function (line) { return line.hidden; }).map(function (line) { return line.text; });
-    if (hidden.length === 0) {
-      const details = el("details", "page-clean");
-      const summary = el("summary", null, "What the agent read ");
-      summary.appendChild(el("span", "tag tag-clean", "No hidden text"));
-      details.appendChild(summary);
-      details.appendChild(preText(agentText));
-      li.appendChild(details);
-      return [];
-    }
-
-    const grid = el("div", "views");
-
-    const human = el("div", "view");
-    human.appendChild(el("div", "view-title", "What a human sees"));
-    human.appendChild(preText(views.visible));
-
-    const agent = el("div", "view view-untrusted");
-    const agentTitle = el("div", "view-title", "What the agent read");
-    agentTitle.appendChild(el("span", "tag tag-untrusted", "untrusted"));
-    agent.appendChild(agentTitle);
-    agent.appendChild(highlightedAgentText(comparison.lines));
-    agent.appendChild(el("p", "injected-note", "Highlighted text is hidden from humans but was read by the agent."));
-
-    grid.appendChild(human);
-    grid.appendChild(agent);
-    li.appendChild(grid);
-    return hidden;
-  }
-
-  function rawData(item) {
-    const details = el("details", "raw");
-    details.appendChild(el("summary", null, "Show raw data"));
-    const dl = el("dl", "raw-fields");
-    dl.appendChild(el("dt", null, "Tool"));
-    dl.appendChild(el("dd", "mono", item.tool));
-    if (item.call) {
-      dl.appendChild(el("dt", null, "Arguments"));
-      const args = item.call.arguments ? JSON.stringify(item.call.arguments, null, 2) : item.call.content || "{}";
-      const dd = el("dd");
-      dd.appendChild(preText(args));
-      dl.appendChild(dd);
-    }
-    // A page that was read is already shown above in full
-    if (item.result && !item.shopKey) {
-      dl.appendChild(el("dt", null, "Result"));
-      const dd = el("dd");
-      dd.appendChild(preText(item.result.content));
-      dl.appendChild(dd);
-    }
-    details.appendChild(dl);
-    return details;
-  }
-
-  // Renders the trace; returns [{ shopKey, lines }] for pages with hidden text.
-  async function renderTrace(trace) {
-    traceEl.replaceChildren();
-    const hiddenFound = [];
-    for (const item of summarizeTrace(trace, shopNames)) {
-      const li = el("li", "step step-" + item.kind + (item.failed ? " step-failed" : ""));
-      li.appendChild(el("div", "step-title", item.sentence));
-      if (item.kind === "tool") {
-        if (item.shopKey && item.result) {
-          const hidden = await renderPageRead(li, item.shopKey, item.result.content);
-          if (hidden.length) hiddenFound.push({ shopKey: item.shopKey, lines: hidden });
-        } else if (item.failed) {
-          li.appendChild(el("p", "step-note error", item.result.content));
-        }
-        li.appendChild(rawData(item));
-      } else if (item.kind === "error") {
-        li.appendChild(el("p", "step-note error", item.text));
-      } else {
-        li.appendChild(el("p", "agent-message", item.text));
-      }
-      traceEl.appendChild(li);
-    }
-    if (trace.length === 0) {
-      traceEl.appendChild(el("li", "muted", "No steps were recorded."));
-    }
-    return hiddenFound;
-  }
-
-  function renderAlert(hiddenFound) {
-    alertCard.replaceChildren();
-    hiddenFound.forEach(function (found) {
-      const name = Object.prototype.hasOwnProperty.call(shopNames, found.shopKey) ? shopNames[found.shopKey] : found.shopKey;
-      alertCard.appendChild(el("h2", null, "Hidden instructions found on " + possessive(name) + " page"));
-      const quote = el("blockquote", "alert-quote");
-      found.lines.forEach(function (line) { quote.appendChild(el("p", null, line)); });
-      alertCard.appendChild(quote);
-    });
-    alertCard.appendChild(el("p", "alert-note", "A human visiting this page would not see this."));
-    alertCard.hidden = hiddenFound.length === 0;
   }
 
   function factRow(label, main, id) {
@@ -302,28 +176,7 @@
   }
 
   // Start waking the server as soon as the page opens; the form stays usable.
-  async function wakeServer() {
-    const deadline = Date.now() + WAKE_GIVE_UP_MS;
-    serverStatus.textContent = "Waking up the server...";
-    serverStatus.className = "server-status server-waking";
-    while (Date.now() < deadline) {
-      try {
-        const resp = await fetch("/health", { cache: "no-store" });
-        if (resp.ok) {
-          serverStatus.textContent = "Server ready";
-          serverStatus.className = "server-status server-ready";
-          return;
-        }
-      } catch (e) {
-        // Not up yet; try again
-      }
-      await new Promise(function (resolve) { setTimeout(resolve, WAKE_RETRY_MS); });
-    }
-    serverStatus.textContent = "The server is not responding yet. It may still be waking up.";
-    serverStatus.className = "server-status server-down";
-  }
-
-  wakeServer();
+  wakeServer(serverStatus);
 
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
@@ -360,8 +213,8 @@
     }
 
     try {
-      const hiddenFound = await renderTrace(data.trace || []);
-      renderAlert(hiddenFound);
+      const hiddenFound = await TraceRender.renderTrace(traceEl, data.trace || [], shopNames, visibleText);
+      TraceRender.renderAlert(alertCard, hiddenFound, shopNames);
       if (data.approve_url && data.proposal) {
         renderProgress(1);
         renderProposal(data.proposal, data.approve_url);

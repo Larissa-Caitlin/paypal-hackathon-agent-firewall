@@ -40,7 +40,7 @@ def test_overall_daily_limit():
     for i in range(100):
         assert limiter.check(f"10.0.0.{i}") is None
     refusal = limiter.check("10.0.1.1")
-    assert "100 purchases per day" in refusal
+    assert "100 runs per day" in refusal
     clock.now += 86400
     assert limiter.check("10.0.1.1") is None
 

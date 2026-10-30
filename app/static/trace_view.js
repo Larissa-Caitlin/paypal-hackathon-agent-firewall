@@ -79,6 +79,48 @@ function summarizeTrace(trace, shopNames) {
   return items;
 }
 
+// Plain names for AI detectors; same wording as the server-rendered result page.
+const DETECTOR_LABELS = {
+  prompt_guard: "Injection classifier (Prompt Guard)",
+  llm_judge: "LLM judge",
+  llm_judge_a: "LLM judge A (security analyst)",
+  llm_judge_b: "LLM judge B (content moderator)",
+  llm_intent: "Intent check",
+};
+
+function detectorLabel(detector) {
+  return Object.prototype.hasOwnProperty.call(DETECTOR_LABELS, detector) ? DETECTOR_LABELS[detector] : detector;
+}
+
+function aiGroupTitle(check, shopNames) {
+  if (check === "intent") return "Product vs your request";
+  const page = /^page_injection\[(.*)\]$/.exec(check);
+  if (page) return possessive(shopLabel(page[1], shopNames).replace(/^"|"$/g, "")) + " page";
+  return check;
+}
+
+// Group AI findings by what they examined; groups with a flag come first, otherwise in order.
+function groupAiFindings(ai) {
+  const groups = [];
+  const byCheck = {};
+  ai.forEach(function (f) {
+    if (!Object.prototype.hasOwnProperty.call(byCheck, f.check)) {
+      byCheck[f.check] = { check: f.check, findings: [] };
+      groups.push(byCheck[f.check]);
+    }
+    byCheck[f.check].findings.push(f);
+  });
+  const flagged = function (g) { return g.findings.some(function (f) { return f.flagged; }); };
+  return groups.filter(flagged).concat(groups.filter(function (g) { return !flagged(g); }));
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { compareTexts: compareTexts, possessive: possessive, summarizeTrace: summarizeTrace };
+  module.exports = {
+    compareTexts: compareTexts,
+    possessive: possessive,
+    summarizeTrace: summarizeTrace,
+    detectorLabel: detectorLabel,
+    aiGroupTitle: aiGroupTitle,
+    groupAiFindings: groupAiFindings,
+  };
 }
