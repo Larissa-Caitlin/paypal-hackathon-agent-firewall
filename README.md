@@ -229,15 +229,17 @@ Known limitations:
 
 ```bash
 python -m venv venv
-venv\Scripts\activate          # Windows; on macOS/Linux: source venv/bin/activate
+venv\Scripts\activate          # Windows cmd/PowerShell; Git Bash: source venv/Scripts/activate; macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env           # then fill in the values
+cp .env.example .env           # then fill in the values (Windows cmd: copy .env.example .env)
 python -c "import secrets; print(secrets.token_urlsafe(32))"   # paste the output into DEMO_ACCESS_KEY
 
 python -m pytest tests         # no PayPal or LLM calls
 uvicorn app.main:app --port 8000
 ```
+
+On Windows without long path support, clone into a short path (for example `C:\src`). Some files in the `openai` package exceed 260 characters inside a deeply nested folder, and `pip install` then fails with `OSError: [Errno 2] No such file or directory`.
 
 ### Walk through a poisoned purchase
 
