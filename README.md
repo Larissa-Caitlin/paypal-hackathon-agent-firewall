@@ -41,14 +41,23 @@ What it is and isn't:
 
 ## Screenshots
 
-![Agent trace with hidden note highlighted](docs/images/trace-hidden-note.png)
-The agent trace: what a human sees next to what the agent read, with the hidden note highlighted.
+![Start page listing in agent view](docs/images/hero-agent-view.png)
+A person sees an ordinary listing; the agent reads a hidden instruction.
+
+![Hidden-instruction alert above the agent's proposal](docs/images/alert-proposal.png)
+The hidden instruction is flagged before payment, next to the agent's unverified proposal.
+
+![Agent trace comparing the two views of a page](docs/images/trace-hidden-note.png)
+What a person sees next to what the agent read.
 
 ![Result page: payment blocked](docs/images/result-block.png)
-The firewall blocks the manipulated purchase and voids the authorization.
+The firewall blocks the manipulated purchase and PayPal releases the held funds.
 
-![Result page: payment allowed](docs/images/result-allow.png)
-A legitimate purchase passes every check and is captured.
+![Attack Lab scorecards and verdict](docs/images/attack-lab.png)
+Attack Lab: the agent is fooled; the firewall catches it on five independent checks.
+
+![Security page: layered defence diagram](docs/images/security-layers.png)
+Layered defence: untrusted text can only produce a claim, checked against PayPal's record.
 
 ## How it works
 
