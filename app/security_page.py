@@ -225,6 +225,7 @@ def _limitations(s):
         ("Prompt Guard catches only overt commands.",
          f"It flagged {_stat(s, 'detectors.prompt_guard.runs_flagged')} of {_stat(s, 'detectors.injection_runs')} "
          "injection runs and scored the original TechMart Deals note as benign."),
+        ("Prompt Guard sees only the start of a page.", "Prompt Guard reads only about the first 512 tokens of a page; a long page could push an injection past it. The LLM judges read the whole page."),
         ("An injection on an approved shop selling the right product at the right price is caught only by the LLM judges.",
          "Every rule passes in that case, so detection rests on model judgement and can vary between runs."),
         ("Small, hand-written case set.",

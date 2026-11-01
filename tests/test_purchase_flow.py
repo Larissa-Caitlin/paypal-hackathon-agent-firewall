@@ -218,6 +218,9 @@ def test_authorize_failure_is_logged_as_block(client, monkeypatch):
     assert body["decision"] == "block"
     assert [a["action"] for a in body["actions"]] == ["error"]
     assert "capture" not in pp.names() and "void" not in pp.names()
+    # A reload finds the same decision and does not authorize again
+    assert client.get("/paypal/return", params={"token": "ORD-GH"}).json()["decision_id"] == body["decision_id"]
+    assert pp.names().count("authorize_order") == 1
 
 
 def test_no_proposal_is_blocked_without_creating_order(client, monkeypatch):
@@ -611,3 +614,123 @@ def test_index_explains_the_demo_catalog():
     assert ("This demo marketplace sells phone cases from three shops. Ask for something else, for example "
             "headphones, to see how the agent and firewall handle a request the shops can't meet.") in html
     assert "intent check hold" not in html
+
+
+
+# --- Final hardening ---
+
+def test_check_stub_is_gone(client):
+    assert client.post("/check", json={"user_instruction": "x", "budget": "20", "payee_email": "a@b.c",
+                                       "amount": "15"}).status_code == 404
+    assert "/check" not in client.get("/openapi.json").json()["paths"]
+    assert not hasattr(main, "PaymentProposal")
+
+
+def test_interactive_docs_are_off_but_schema_stays(client):
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    schema = client.get("/openapi.json")
+    assert schema.status_code == 200 and "/purchase" in schema.json()["paths"]
+
+
+@pytest.mark.parametrize("path", ["/", "/health", "/static/style.css", "/security", "/nope"])
+def test_security_headers_on_every_response(client, path):
+    headers = client.get(path).headers
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["referrer-policy"] == "no-referrer"
+    assert headers["x-frame-options"] == "DENY"
+    assert "strict-transport-security" not in headers  # plain HTTP in tests
+    is_html = headers.get("content-type", "").startswith("text/html")
+    assert ("content-security-policy" in headers) == is_html
+
+
+def test_hsts_only_over_https(client):
+    assert client.get("/health", headers={"X-Forwarded-Proto": "https"}).headers[
+        "strict-transport-security"] == "max-age=31536000"
+    assert "strict-transport-security" not in client.get("/health", headers={"X-Forwarded-Proto": "http"}).headers
+    secure = TestClient(main.app, base_url="https://testserver")
+    assert secure.get("/health").headers["strict-transport-security"] == "max-age=31536000"
+
+
+def test_concurrent_returns_authorize_once(client, monkeypatch):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    pp = FakePayPal(monkeypatch, gadgethub_order())
+    stub_verdict(monkeypatch, "allow")
+    start_purchase(client)
+    real_authorize = pp.authorize_order
+
+    def slow_authorize(shop, order_id):
+        time.sleep(0.4)  # keep the first request inside its claim while the second arrives
+        return real_authorize(shop, order_id)
+
+    monkeypatch.setattr(paypal_client, "authorize_order", slow_authorize)
+    barrier = threading.Barrier(2)
+    results = []
+
+    def go():
+        barrier.wait()
+        resp = client.get("/paypal/return", params={"token": "ORD-GH"})
+        results.append((resp.status_code, resp.json()["decision_id"]))
+
+    threads = [threading.Thread(target=go) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert pp.names().count("authorize_order") == 1
+    assert pp.names().count("capture") == 1
+    assert [r[0] for r in results] == [200, 200]
+    assert results[0][1] == results[1][1]  # both see the one decision
+
+
+def test_claimed_order_without_decision_is_409_without_authorizing(client, monkeypatch):
+    from app import audit
+
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    pp = FakePayPal(monkeypatch, gadgethub_order())
+    start_purchase(client)
+    assert audit.claim_order("ORD-GH") is True  # another request is mid-flight
+    monkeypatch.setattr(main, "CLAIM_WAIT_SECONDS", 0.3)
+    resp = client.get("/paypal/return", params={"token": "ORD-GH"})
+    assert resp.status_code == 409
+    assert "authorize_order" not in pp.names()
+
+
+def test_order_claims_are_append_only(tmp_path):
+    import sqlite3
+
+    from app import audit
+
+    assert audit.claim_order("ORD-X") is True
+    assert audit.claim_order("ORD-X") is False
+    with sqlite3.connect(audit._db_path()) as conn:
+        for sql in ("UPDATE order_claims SET order_id = 'Y'", "DELETE FROM order_claims"):
+            with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+                conn.execute(sql)
+
+
+@pytest.mark.parametrize("error", [TimeoutError("read timed out"), ConnectionError("reset by peer")])
+def test_non_paypal_authorize_error_is_logged_as_block(client, monkeypatch, error):
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    pp = FakePayPal(monkeypatch, gadgethub_order())
+    pp.authorize_error = error
+    start_purchase(client)
+    resp = client.get("/paypal/return", params={"token": "ORD-GH"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["decision"] == "block"
+    assert body["reasons"] == [f"Could not confirm the hold with PayPal: {type(error).__name__}"]
+    assert body["actions"] == [{"action": "error",
+                                "detail": f"Authorize failed: {type(error).__name__}; funds may be held, will expire"}]
+    assert "capture" not in pp.names() and "void" not in pp.names()
+    page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML)
+    assert page.status_code == 200 and "Blocked" in page.text
+    assert pp.names().count("authorize_order") == 1  # the reload did not authorize again
+
+
+def test_pytest_ini_points_at_tests():
+    from pathlib import Path
+
+    ini = (Path(main.__file__).resolve().parent.parent / "pytest.ini").read_text(encoding="utf-8")
+    assert "testpaths = tests" in ini

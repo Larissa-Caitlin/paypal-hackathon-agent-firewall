@@ -79,6 +79,17 @@ CREATE TRIGGER IF NOT EXISTS actions_no_update BEFORE UPDATE ON actions
     BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS actions_no_delete BEFORE DELETE ON actions
     BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+-- One row per PayPal order whose return is being processed: the UNIQUE order_id means
+-- only one request ever authorizes an order
+CREATE TABLE IF NOT EXISTS order_claims (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS order_claims_no_update BEFORE UPDATE ON order_claims
+    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS order_claims_no_delete BEFORE DELETE ON order_claims
+    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 -- Only events whose signature PayPal verified are stored; event_id stops replays and retries
 CREATE TABLE IF NOT EXISTS webhook_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +182,19 @@ def get_purchase_by_order(order_id) -> dict | None:
     return dict(row) if row else None
 
 
+def claim_order(order_id) -> bool:
+    """Claim an order for authorization. True for the first caller only; False if already claimed."""
+    init_db()
+    try:
+        with closing(_connect()) as conn, conn:
+            conn.execute("INSERT INTO order_claims (order_id, created_at) VALUES (?, ?)", (order_id, _now()))
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e):
+            return False
+        raise
+    return True
+
+
 def get_decision_id_by_order(order_id) -> int | None:
     """Return the id of the decision already made for a PayPal order, or None."""
     init_db()
@@ -181,8 +205,12 @@ def get_decision_id_by_order(order_id) -> int | None:
     return row["id"] if row else None
 
 
-def log_decision(instruction, budget, proposal, order, verdict, authorization_id=None) -> int:
-    """Record a firewall verdict with its evidence. Returns the new decision id."""
+def log_decision(instruction, budget, proposal, order, verdict, authorization_id=None, order_id=None) -> int:
+    """Record a firewall verdict with its evidence. Returns the new decision id.
+
+    order_id is recorded even when PayPal's order could not be read (order is None),
+    so a reload of the return URL finds this decision instead of trying again.
+    """
     init_db()
     findings = {
         "rules": [asdict(f) for f in verdict.rule_findings],
@@ -204,7 +232,7 @@ def log_decision(instruction, budget, proposal, order, verdict, authorization_id
                 proposal.product_id if proposal else None,
                 str(proposal.amount) if proposal else None,
                 proposal.reason if proposal else None,
-                order.order_id if order else None,
+                order.order_id if order else order_id,
                 authorization_id,
                 str(order.amount) if order else None,
                 order.currency if order else None,

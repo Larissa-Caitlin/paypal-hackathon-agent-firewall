@@ -1,6 +1,7 @@
 import hmac
 import json
 import os
+import time
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
@@ -44,13 +45,27 @@ SCENARIOS = {
     "poisoned": {"allowed_shops": None, "include_hidden": True},
 }
 
-app = FastAPI(title="Agent Payment Firewall")
+# /docs and /redoc need inline scripts and CDN assets that our CSP blocks, so they are off.
+# The schema itself stays available at /openapi.json.
+app = FastAPI(title="Agent Payment Firewall", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _is_https(request):
+    # Render terminates TLS at its proxy and passes the original scheme in X-Forwarded-Proto
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return forwarded == "https" or request.url.scheme == "https"
+
+
 @app.middleware("http")
-async def content_security_policy(request: Request, call_next):
+async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    # Fallback for browsers that ignore the CSP's frame-ancestors
+    response.headers["X-Frame-Options"] = "DENY"
+    if _is_https(request):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
     if response.headers.get("content-type", "").startswith("text/html"):
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     return response
@@ -85,18 +100,6 @@ def limit_lab_runs(request: Request):
     refusal = purchase_limiter.check(client_ip(request), bucket="lab")
     if refusal:
         raise HTTPException(status_code=429, detail=refusal)
-
-
-class PaymentProposal(BaseModel):
-    user_instruction: str
-    budget: Decimal = Field(gt=0)
-    payee_email: str
-    amount: Decimal = Field(gt=0)
-
-
-class Verdict(BaseModel):
-    decision: Literal["allow", "hold", "block"]
-    reasons: list[str]
 
 
 @app.get("/", include_in_schema=False)
@@ -143,21 +146,6 @@ def lab_run(req: LabRequest, request: Request):
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.post("/check", response_model=Verdict)
-def check(proposal: PaymentProposal) -> Verdict:
-    if proposal.amount > proposal.budget:
-        return Verdict(
-            decision="block",
-            reasons=[f"Amount {proposal.amount} exceeds budget {proposal.budget}"],
-        )
-    return Verdict(decision="allow", reasons=["Within budget"])
-
-
-@app.get("/shops")
-def shops():
-    return [{"shop_key": key, "shop_name": name} for key, name in list_shops()]
 
 
 @app.get("/catalog")
@@ -319,6 +307,20 @@ def _return_response(request, decision_id):
     return _decision_response(decision_id)
 
 
+CLAIM_WAIT_SECONDS = 10
+CLAIM_POLL_SECONDS = 0.2
+
+
+def _wait_for_decision(order_id):
+    """Poll for the decision the request that claimed this order is making. None if it doesn't appear in time."""
+    deadline = time.monotonic() + CLAIM_WAIT_SECONDS
+    while True:
+        decision_id = audit.get_decision_id_by_order(order_id)
+        if decision_id is not None or time.monotonic() >= deadline:
+            return decision_id
+        time.sleep(CLAIM_POLL_SECONDS)
+
+
 @app.get("/paypal/return")
 def paypal_return(token: str, request: Request):
     """After buyer approval: authorize, read the order back, run the firewall, settle.
@@ -337,12 +339,29 @@ def paypal_return(token: str, request: Request):
     instruction, budget, shop_key = row["instruction"], Decimal(row["budget"]), row["shop_key"]
     proposal = Proposal(row["product_id"], shop_key, Decimal(row["agent_claimed_amount"]), row["agent_reason"])
 
+    # Claim the order before touching PayPal. Of two concurrent returns (a double
+    # click, a replayed redirect), exactly one wins the claim and authorizes; the
+    # other waits for that request's decision and returns it.
+    if not audit.claim_order(order_id):
+        decision_id = _wait_for_decision(order_id)
+        if decision_id is None:
+            raise HTTPException(status_code=409, detail="This payment is still being processed. Reload in a moment.")
+        return _return_response(request, decision_id)
+
     try:
         auth = paypal_client.authorize_order(shop_key, order_id)
     except paypal_client.PayPalError as e:
         verdict = firewall.Verdict("block", [f"PayPal could not hold the funds: {e.name}"], [], [])
-        decision_id = audit.log_decision(instruction, budget, proposal, None, verdict)
+        decision_id = audit.log_decision(instruction, budget, proposal, None, verdict, order_id=order_id)
         audit.log_action(decision_id, "error", f"Authorize failed: HTTP {e.status_code} {e.name} (debug_id={e.debug_id})")
+        return _return_response(request, decision_id)
+    except Exception as e:
+        # Network error or timeout: PayPal may or may not have placed the hold. Nothing
+        # is captured; an authorization nobody captures expires on its own.
+        verdict = firewall.Verdict("block", [f"Could not confirm the hold with PayPal: {type(e).__name__}"], [], [])
+        decision_id = audit.log_decision(instruction, budget, proposal, None, verdict, order_id=order_id)
+        audit.log_action(decision_id, "error",
+                         f"Authorize failed: {type(e).__name__}; funds may be held, will expire")
         return _return_response(request, decision_id)
 
     # Funds are now held. Anything that stops the firewall from reaching a
@@ -354,7 +373,8 @@ def paypal_return(token: str, request: Request):
     except Exception as e:
         verdict = firewall.Verdict("block", [f"The payment could not be checked: {type(e).__name__}"], [], [])
 
-    decision_id = audit.log_decision(instruction, budget, proposal, order, verdict, auth.authorization_id)
+    decision_id = audit.log_decision(instruction, budget, proposal, order, verdict, auth.authorization_id,
+                                     order_id=order_id)
     if verdict.decision == "allow":
         _settle(decision_id, shop_key, auth.authorization_id, capture=True)
     elif verdict.decision == "block":
