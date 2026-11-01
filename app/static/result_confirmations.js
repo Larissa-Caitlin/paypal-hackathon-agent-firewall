@@ -16,6 +16,20 @@
   // Once one of these arrives, PayPal has confirmed the final outcome
   const FINAL = ["PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.DENIED", "PAYMENT.AUTHORIZATION.VOIDED"];
 
+  // "10:44:56 PM" in the viewer's own time zone and locale; the full ISO time stays in the tooltip
+  function localTime(iso) {
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return iso;
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  }
+
+  function formatTimes() {
+    section.querySelectorAll("time[datetime]").forEach(function (t) {
+      t.title = t.getAttribute("datetime");
+      t.textContent = localTime(t.getAttribute("datetime"));
+    });
+  }
+
   function render(data) {
     list.replaceChildren();
     (data.events || []).forEach(function (e) {
@@ -26,8 +40,9 @@
       label.textContent = e.label;
       const time = document.createElement("time");
       time.className = "muted";
-      time.dateTime = e.received_at;
-      time.textContent = e.received_at;
+      time.dateTime = e.time;
+      time.title = e.time;
+      time.textContent = localTime(e.time);
       li.appendChild(label);
       li.appendChild(document.createTextNode(" "));
       li.appendChild(time);
@@ -67,5 +82,6 @@
     }
   }
 
+  formatTimes();
   poll();
 })();

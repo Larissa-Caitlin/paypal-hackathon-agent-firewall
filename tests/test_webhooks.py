@@ -327,7 +327,8 @@ def test_result_page_waits_for_confirmation():
 def test_result_page_lists_events_and_flags_mismatch_escaped():
     xss = "<script>alert(1)</script>"
     confirmed = {"order_id": "ORD1", "mismatch": True, "events": [
-        {"event_type": "X", "label": f"Payment captured {xss}", "received_at": "2026-10-30T10:00:00+00:00",
+        {"event_type": "X", "label": f"Payment captured {xss}", "time": "2026-10-30T10:00:00+00:00",
+         "received_at": "2026-10-30T10:00:01+00:00",
          "reconciliation": "mismatch", "detail": f"PayPal captured a blocked payment {xss}"}]}
     page = render_result_page(result_row(), confirmed)
     section = page.split('id="confirmations"', 1)[1].split("</section>", 1)[0]
@@ -355,3 +356,75 @@ def test_confirmations_script_uses_text_content_only():
                   "sessionStorage.", "eval(", "new Function"):
         assert usage not in js, usage
     assert "5000" in js and "120000" in js
+
+
+
+# --- Event order and time display ---
+
+def at(ev, create_time):
+    return {**ev, "create_time": create_time}
+
+
+def test_create_time_is_stored(client, verify):
+    post(client, at(approved(), "2026-10-30T22:44:56.123Z"))
+    assert rows()[0]["create_time"] == "2026-10-30T22:44:56.123Z"
+
+
+def test_events_sorted_by_paypal_create_time_not_arrival(client, verify):
+    decision("block", ["voided"])
+    # PayPal delivers out of order: the void arrives first, the approval last
+    post(client, at(void(), "2026-10-30T22:45:10Z"))
+    post(client, at(event("E-AUTH", "PAYMENT.AUTHORIZATION.CREATED", {"id": "AUTH1"}), "2026-10-30T22:45:00Z"))
+    post(client, at(approved(), "2026-10-30T22:44:56Z"))
+    body = client.get("/orders/ORD1/confirmations").json()
+    assert [e["event_type"] for e in body["events"]] == [
+        "CHECKOUT.ORDER.APPROVED", "PAYMENT.AUTHORIZATION.CREATED", "PAYMENT.AUTHORIZATION.VOIDED"]
+    assert body["events"][0]["time"] == "2026-10-30T22:44:56+00:00"
+
+
+def test_same_time_ties_break_in_payment_order(client, verify):
+    decision("allow", ["captured"])
+    same = "2026-10-30T22:45:00Z"
+    post(client, at(capture(), same))
+    post(client, at(event("E-AUTH", "PAYMENT.AUTHORIZATION.CREATED", {"id": "AUTH1"}), same))
+    post(client, at(approved(), same))
+    assert [e["event_type"] for e in client.get("/orders/ORD1/confirmations").json()["events"]] == [
+        "CHECKOUT.ORDER.APPROVED", "PAYMENT.AUTHORIZATION.CREATED", "PAYMENT.CAPTURE.COMPLETED"]
+
+
+def test_missing_or_bad_create_time_falls_back_to_received_at(client, verify):
+    decision("block", ["voided"])
+    post(client, approved())  # no create_time
+    post(client, at(void(), "not a time"))
+    events = client.get("/orders/ORD1/confirmations").json()["events"]
+    received = {r["event_type"]: r["received_at"] for r in rows()}
+    assert [e["time"] for e in events] == [
+        webhooks._parse_time(received[e["event_type"]]).isoformat() for e in events]
+
+
+def test_old_database_gets_the_column_without_changing_rows(tmp_path, monkeypatch, client, verify):
+    old = tmp_path / "old.db"
+    monkeypatch.setenv("AUDIT_DB_PATH", str(old))
+    column = "    create_time TEXT,  -- PayPal's event create_time; NULL in rows stored before it was recorded\n"
+    assert column in audit.SCHEMA
+    schema = audit.SCHEMA.replace(column, "")
+    with sqlite3.connect(old) as conn:
+        conn.executescript(schema)
+        conn.execute("INSERT INTO webhook_events (event_id, event_type, shop_key, order_id, received_at, verified, "
+                     "reconciliation) VALUES ('OLD', 'CHECKOUT.ORDER.APPROVED', 'techmart', 'ORD1', "
+                     "'2026-10-29T09:00:00+00:00', 1, 'unmatched')")
+    decision("block", ["voided"])
+    post(client, at(void(), "2026-10-30T22:45:10Z"))
+    old_row, new_row = rows()
+    assert old_row["event_id"] == "OLD" and old_row["create_time"] is None
+    assert new_row["create_time"] == "2026-10-30T22:45:10Z"
+    events = client.get("/orders/ORD1/confirmations").json()["events"]
+    assert [e["time"] for e in events] == ["2026-10-29T09:00:00+00:00", "2026-10-30T22:45:10+00:00"]
+
+
+def test_result_page_puts_full_iso_time_in_datetime_and_title():
+    confirmed = {"order_id": "ORD1", "mismatch": False, "events": [
+        {"event_type": "X", "label": "Payment captured", "time": "2026-10-30T22:44:56+00:00",
+         "received_at": "2026-10-30T22:45:01+00:00", "reconciliation": "match", "detail": "ok"}]}
+    page = render_result_page(result_row(), confirmed)
+    assert '<time class="muted" datetime="2026-10-30T22:44:56+00:00" title="2026-10-30T22:44:56+00:00">' in page

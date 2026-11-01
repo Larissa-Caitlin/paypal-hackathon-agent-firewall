@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     capture_id TEXT,
     amount TEXT,
     currency TEXT,
+    create_time TEXT,  -- PayPal's event create_time; NULL in rows stored before it was recorded
     received_at TEXT NOT NULL,
     verified INTEGER NOT NULL CHECK (verified = 1),
     decision_id INTEGER REFERENCES decisions(id),
@@ -129,6 +130,11 @@ def init_db():
     """Create the tables and append-only triggers if they don't exist."""
     with closing(_connect()) as conn:
         conn.executescript(SCHEMA)
+        # Databases created before create_time was recorded get the column added.
+        # ALTER TABLE adds a column for new rows only; existing rows are never changed.
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(webhook_events)")}
+        if "create_time" not in columns:
+            conn.execute("ALTER TABLE webhook_events ADD COLUMN create_time TEXT")
 
 
 def log_purchase(instruction, budget, agent_result, order_id) -> int:
@@ -247,7 +253,8 @@ def get_decision_with_actions(decision_id) -> dict | None:
 
 
 WEBHOOK_FIELDS = ("event_id", "event_type", "shop_key", "resource_id", "order_id", "authorization_id",
-                  "capture_id", "amount", "currency", "decision_id", "reconciliation", "reconciliation_detail")
+                  "capture_id", "amount", "currency", "create_time", "decision_id", "reconciliation",
+                  "reconciliation_detail")
 
 
 def webhook_event_exists(event_id) -> bool:

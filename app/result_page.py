@@ -294,7 +294,8 @@ def _confirmations(row, confirmations):
     items = "".join(
         f'<li class="confirmation confirmation-{_e(e["reconciliation"])}">'
         f'<span class="confirmation-label">{_e(e["label"])}</span> '
-        f'<time class="muted" datetime="{_e(e["received_at"])}">{_e(e["received_at"])}</time>'
+        # Full ISO time here; result_confirmations.js shows it in the viewer's local time
+        f'<time class="muted" datetime="{_e(e["time"])}" title="{_e(e["time"])}">{_e(e["time"])}</time>'
         + (f'<span class="confirmation-detail">{_e(e["detail"])}</span>' if e["reconciliation"] == "mismatch" else "")
         + "</li>"
         for e in events

@@ -9,6 +9,7 @@ bodies are never stored, only counted.
 import logging
 import threading
 from collections import Counter
+from datetime import datetime, timezone
 
 from app import audit
 
@@ -85,6 +86,7 @@ def extract(event, shop_key) -> dict:
         "capture_id": resource_id if event_type.startswith("PAYMENT.CAPTURE.") else None,
         "amount": amount,
         "currency": currency,
+        "create_time": _text(event.get("create_time")),
     }
 
 
@@ -146,15 +148,42 @@ def handle_verified_event(event, shop_key) -> bool:
     return inserted
 
 
+# Tie-break for events with the same time: the order things happen in a payment
+LOGICAL_ORDER = {
+    "CHECKOUT.ORDER.APPROVED": 0,
+    "PAYMENT.AUTHORIZATION.CREATED": 1,
+    "PAYMENT.CAPTURE.COMPLETED": 2,
+    "PAYMENT.CAPTURE.DENIED": 2,
+    "PAYMENT.AUTHORIZATION.VOIDED": 2,
+}
+
+
+def _parse_time(value):
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def event_time(row) -> datetime:
+    """When PayPal created the event; received_at for old rows or an unreadable create_time."""
+    return _parse_time(row.get("create_time")) or _parse_time(row["received_at"]) or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def confirmations(order_id) -> dict:
-    """What PayPal has confirmed for an order, for the result page."""
-    events = audit.get_webhook_events_for_order(order_id)
+    """What PayPal has confirmed for an order, for the result page, in PayPal's event order."""
+    events = sorted(
+        audit.get_webhook_events_for_order(order_id),
+        key=lambda e: (event_time(e), LOGICAL_ORDER.get(e["event_type"], 3), e["id"]),
+    )
     return {
         "order_id": order_id,
         "events": [
             {
                 "event_type": e["event_type"],
                 "label": EVENT_LABELS.get(e["event_type"], e["event_type"]),
+                "time": event_time(e).isoformat(),
                 "received_at": e["received_at"],
                 "reconciliation": e["reconciliation"],
                 "detail": e["reconciliation_detail"],
