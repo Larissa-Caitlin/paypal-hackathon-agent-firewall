@@ -294,7 +294,7 @@ On Windows without long path support, clone into a short path (for example `C:\s
 3. Click **Approve in PayPal** and log in as the sandbox buyer.
 4. PayPal redirects back to `/paypal/return`. The funds are authorized, the firewall runs, and the result page shows **Blocked**: TechMart Deals is not an approved shop and its name imitates TechMart. The authorization is voided.
 
-The demo marketplace sells phone cases from three shops. Ask for something else (for example, headphones) to see the intent check hold the purchase.
+This demo marketplace sells phone cases from three shops. Ask for something else, for example headphones, to see how the agent and firewall handle a request the shops can't meet.
 
 ## Scripts
 

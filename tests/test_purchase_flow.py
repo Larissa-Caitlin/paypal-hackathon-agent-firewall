@@ -608,5 +608,6 @@ def test_index_explains_the_demo_catalog():
     html = (Path(main.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
     assert ">Buy me a phone case for my 6.1-inch phone.</textarea>" in html
     assert 'aria-describedby="instruction-hint"' in html
-    assert ("This demo marketplace sells phone cases from three shops. Ask for something else "
-            "(for example, headphones) to see the intent check hold the purchase.") in html
+    assert ("This demo marketplace sells phone cases from three shops. Ask for something else, for example "
+            "headphones, to see how the agent and firewall handle a request the shops can't meet.") in html
+    assert "intent check hold" not in html
