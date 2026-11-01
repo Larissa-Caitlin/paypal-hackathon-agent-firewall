@@ -600,3 +600,13 @@ def test_result_page_shows_hold_controls_until_resolved(client, monkeypatch):
     page = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML).text
     assert 'id="hold-controls"' not in page
     assert "You rejected the payment" in page
+
+
+def test_index_explains_the_demo_catalog():
+    from pathlib import Path
+
+    html = (Path(main.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert ">Buy me a phone case for my 6.1-inch phone.</textarea>" in html
+    assert 'aria-describedby="instruction-hint"' in html
+    assert ("This demo marketplace sells phone cases from three shops. Ask for something else "
+            "(for example, headphones) to see the intent check hold the purchase.") in html
