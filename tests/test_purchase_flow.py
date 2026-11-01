@@ -734,3 +734,52 @@ def test_pytest_ini_points_at_tests():
 
     ini = (Path(main.__file__).resolve().parent.parent / "pytest.ini").read_text(encoding="utf-8")
     assert "testpaths = tests" in ini
+
+
+
+def claimed_but_undecided(client, monkeypatch):
+    from app import audit
+
+    agent_proposing(monkeypatch, "gh-case-01", "gadgethub", "15.00")
+    pp = FakePayPal(monkeypatch, gadgethub_order())
+    start_purchase(client)
+    assert audit.claim_order("ORD-GH") is True  # another request is still checking this order
+    monkeypatch.setattr(main, "CLAIM_WAIT_SECONDS", 0.3)
+    return pp
+
+
+def test_browser_reload_while_checking_gets_still_checking_page(client, monkeypatch):
+    pp = claimed_but_undecided(client, monkeypatch)
+    resp = client.get("/paypal/return", params={"token": "ORD-GH"}, headers=HTML)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert main.CONTENT_SECURITY_POLICY == resp.headers["content-security-policy"]
+    page = resp.text
+    assert '<meta http-equiv="refresh" content="5">' in page
+    assert "<h1 class=\"page-title\">Still checking this payment</h1>" in page
+    assert ("The firewall is running its checks. This usually takes 10 to 20 seconds. "
+            "This page will refresh by itself.") in page
+    assert 'href="/paypal/return?token=ORD-GH"' in page
+    assert "<script" not in page
+    assert 'class="site-nav"' in page
+    assert "authorize_order" not in pp.names()
+
+
+def test_api_reload_while_checking_still_gets_409(client, monkeypatch):
+    pp = claimed_but_undecided(client, monkeypatch)
+    resp = client.get("/paypal/return", params={"token": "ORD-GH"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "This payment is still being processed. Reload in a moment."
+    assert "authorize_order" not in pp.names()
+
+
+def test_still_checking_reload_link_is_escaped():
+    from app.result_page import render_still_checking_page
+
+    page = render_still_checking_page('"><script>x</script>')
+    assert "<script>" not in page
+    assert 'href="/paypal/return?token=%22%3E%3Cscript%3Ex%3C%2Fscript%3E"' in page
+
+
+def test_claim_wait_is_25_seconds():
+    assert main.CLAIM_WAIT_SECONDS == 25

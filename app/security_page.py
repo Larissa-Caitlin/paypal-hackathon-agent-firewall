@@ -240,6 +240,7 @@ def _limitations(s):
         ("The audit log is not tamper-proof.",
          "SQLite triggers stop edits through the database, but someone with file access could drop the triggers or "
          "the file. There is no hash chain."),
+        ("A crash mid-check leaves that order waiting.", "If the server stops after claiming an order but before recording a decision, that order shows 'still checking' until the claim is cleared. No money moves; PayPal releases the hold on its own. On Render the claim is wiped with the disk on restart."),
         ("Sandbox only.", "Only the PayPal sandbox has been used."),
     ]
     return "".join(f"<li><strong>{_e(title)}</strong> {body}</li>" for title, body in items)

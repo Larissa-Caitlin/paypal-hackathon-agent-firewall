@@ -142,7 +142,8 @@ def test_design_decisions_and_limitations(page):
         assert f"<h3>{title}</h3>" in page.text, title
     assert "PERMISSION_DENIED" in page.text
     for phrase in ("not a blind test", "hand-written case set", "One model.", "Simulated orders in the attack set",
-                   "first 512 tokens of a page", "The LLM judges read the whole page."):
+                   "first 512 tokens of a page", "The LLM judges read the whole page.",
+                   "until the claim is cleared", "On Render the claim is wiped with the disk on restart."):
         assert phrase in page.text, phrase
 
 

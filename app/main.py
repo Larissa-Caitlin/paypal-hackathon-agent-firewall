@@ -19,7 +19,7 @@ from app.agent import Proposal, run_agent
 from app.catalog import PRODUCTS, get_product, list_shops
 from app.lab import run_lab
 from app.rate_limit import PurchaseLimiter, client_ip
-from app.result_page import render_result_page
+from app.result_page import render_result_page, render_still_checking_page
 from app.security_page import load_summary, render_security_page
 from app.shop_pages import page_text_for_agent, render_shop_page
 
@@ -307,7 +307,8 @@ def _return_response(request, decision_id):
     return _decision_response(decision_id)
 
 
-CLAIM_WAIT_SECONDS = 10
+# Long enough that most reloads during the checks just get the real result
+CLAIM_WAIT_SECONDS = 25
 CLAIM_POLL_SECONDS = 0.2
 
 
@@ -345,6 +346,9 @@ def paypal_return(token: str, request: Request):
     if not audit.claim_order(order_id):
         decision_id = _wait_for_decision(order_id)
         if decision_id is None:
+            # Browsers get a page that refreshes itself; API clients keep the 409
+            if "text/html" in request.headers.get("accept", ""):
+                return HTMLResponse(render_still_checking_page(order_id))
             raise HTTPException(status_code=409, detail="This payment is still being processed. Reload in a moment.")
         return _return_response(request, decision_id)
 

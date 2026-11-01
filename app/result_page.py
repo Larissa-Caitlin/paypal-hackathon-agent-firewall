@@ -8,6 +8,7 @@ import json
 import re
 from decimal import Decimal, InvalidOperation
 from html import escape
+from urllib.parse import quote
 
 from app.catalog import get_product, list_shops
 from app.page_chrome import site_header
@@ -308,6 +309,38 @@ def _confirmations(row, confirmations):
     <p class="muted" id="confirmations-waiting"{" hidden" if events else ""}>{_e(WAITING)}</p>
     <ul class="confirmations" id="confirmations-list">{items}</ul>
   </section>"""
+
+
+STILL_CHECKING_REFRESH_SECONDS = 5
+
+
+def render_still_checking_page(order_id) -> str:
+    """Shown when the return URL is reloaded while another request is still checking this order.
+
+    Refreshes itself with a meta tag, so it needs no script and the CSP stays as it is.
+    """
+    reload_url = "/paypal/return?token=" + quote(str(order_id), safe="")
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="{STILL_CHECKING_REFRESH_SECONDS}">
+  <title>Still checking this payment: Agent Payment Firewall</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="container">
+  {site_header("demo")}
+  <header class="page-header">
+    <h1 class="page-title">Still checking this payment</h1>
+    <p class="lede">The firewall is running its checks. This usually takes 10 to 20 seconds. This page will refresh by itself.</p>
+    <a class="link" href="{_e(reload_url)}">Reload now</a>
+  </header>
+</main>
+</body>
+</html>
+"""
 
 
 def render_result_page(row, confirmations=None) -> str:
