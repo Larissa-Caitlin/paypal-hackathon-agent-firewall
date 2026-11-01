@@ -86,6 +86,23 @@ class AgentResult:
     pages_read: dict[str, str] = field(default_factory=dict)
 
 
+MAX_TOOL_CALL_RETRIES = 2
+
+
+def _is_invalid_tool_call(error) -> bool:
+    """True for the provider's 400 'tool call validation failed' error, e.g. Groq rejecting a
+    gpt-oss call to 'read_shop_page<|channel|>commentary'. Nothing else counts."""
+    if getattr(error, "status_code", None) != 400:
+        return False
+    body = getattr(error, "body", None)
+    codes = {getattr(error, "code", None)}
+    if isinstance(body, dict):
+        codes.add(body.get("code"))
+        if isinstance(body.get("error"), dict):
+            codes.add(body["error"].get("code"))
+    return "tool_use_failed" in codes or "Tool call validation failed" in str(error)
+
+
 def run_agent(
     instruction: str,
     budget: Decimal,
@@ -142,16 +159,31 @@ def run_agent(
         {"role": "user", "content": f"{instruction}\nBudget: ${budget:.2f}"},
     ]
 
-    for _ in range(max_steps):
-        try:
-            msg = chat(messages, tools=TOOLS)
-        except Exception as e:
-            # Keep the evidence: record the failure in the trace and hand the
-            # partial result to the caller on the exception before re-raising.
-            if not getattr(e, "agent_result", None):
-                result.trace.append(AgentStep("error", "llm", None, f"{type(e).__name__}: {e}"))
-                e.agent_result = result
-            raise
+    # max_steps caps LLM calls, retries included, so a run can't loop forever
+    llm_calls = 0
+    while llm_calls < max_steps:
+        retries = 0
+        while True:
+            llm_calls += 1
+            try:
+                msg = chat(messages, tools=TOOLS)
+                break
+            except Exception as e:
+                # The model's own malformed tool call (a known gpt-oss glitch) is worth
+                # retrying unchanged; any other error is not.
+                if _is_invalid_tool_call(e) and retries < MAX_TOOL_CALL_RETRIES and llm_calls < max_steps:
+                    retries += 1
+                    result.trace.append(AgentStep(
+                        "message", None, None,
+                        f"Model produced an invalid tool call; retrying ({retries}/{MAX_TOOL_CALL_RETRIES})",
+                    ))
+                    continue
+                # Keep the evidence: record the failure in the trace and hand the
+                # partial result to the caller on the exception before re-raising.
+                if not getattr(e, "agent_result", None):
+                    result.trace.append(AgentStep("error", "llm", None, f"{type(e).__name__}: {e}"))
+                    e.agent_result = result
+                raise
         # model_dump keeps provider extras (e.g. Gemini thought signatures) needed on replay
         messages.append(msg.model_dump(exclude_none=True))
         if msg.content:
