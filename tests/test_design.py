@@ -76,7 +76,7 @@ def test_every_page_has_visible_focus_and_the_shared_nav(client):
         assert 'class="site-nav"' in html, name
 
 
-LOGO = '<img class="brand-mark" src="/static/logo.svg" alt="" width="16" height="16">'
+LOGO = '<img class="brand-logo" src="/static/logo.svg" alt="" width="16" height="16">'
 FAVICON = '<link rel="icon" type="image/svg+xml" href="/static/logo.svg">'
 
 
@@ -91,7 +91,7 @@ def test_logo_and_favicon_on_every_page(client):
         assert html.count(LOGO) == 1, name
         head = html.split("</head>", 1)[0]
         assert FAVICON in head, name
-        assert 'class="brand-mark" aria-hidden' not in html, name  # the old square is gone
+        assert 'brand-mark' not in html, name  # the old square's class, still styled by stale cached CSS
 
 
 def test_pages_have_no_inline_scripts(client):
@@ -118,5 +118,25 @@ def test_logo_svg_is_a_plain_static_shield(client):
 
 
 def test_logo_is_16px_and_centred_with_the_title():
-    assert ".brand-mark { width: 16px; height: 16px; flex: none; display: block; }" in CSS
+    assert ".brand-logo { width: 16px; height: 16px; flex: none; display: block; }" in CSS
     assert re.search(r"\.brand \{[^}]*display: flex;[^}]*align-items: center;", CSS)
+
+
+
+def test_no_rule_for_the_old_square_class():
+    rules = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    assert ".brand-mark" not in rules
+    assert ".brand-logo {" in rules
+
+
+@pytest.mark.parametrize("path", ["/", "/lab", "/security", "/static/style.css", "/static/logo.svg", "/static/app.js"])
+def test_pages_and_static_files_are_revalidated(client, path):
+    resp = client.get(path)
+    assert resp.headers["cache-control"] == "no-cache"
+
+
+def test_unchanged_static_file_revalidates_with_304(client):
+    first = client.get("/static/style.css")
+    etag = first.headers["etag"]
+    again = client.get("/static/style.css", headers={"If-None-Match": etag})
+    assert again.status_code == 304

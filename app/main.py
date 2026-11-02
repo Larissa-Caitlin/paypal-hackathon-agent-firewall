@@ -66,8 +66,13 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     if _is_https(request):
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
-    if response.headers.get("content-type", "").startswith("text/html"):
+    is_html = response.headers.get("content-type", "").startswith("text/html")
+    if is_html:
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    # Revalidate pages and static files on every load (a cheap 304 when unchanged),
+    # so a deploy never leaves browsers mixing new HTML with an old cached stylesheet
+    if is_html or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
