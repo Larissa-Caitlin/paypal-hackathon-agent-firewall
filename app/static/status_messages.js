@@ -14,6 +14,8 @@ function cleanKey(raw) {
 function errorMessage(status, detail) {
   if (status === 401) return "That access key didn't work. Check it and try again.";
   if (status === 429) return typeof detail === "string" && detail ? detail : "Too many requests. Wait a while and try again.";
+  // The server's own 503 for a used-up AI quota already says what to do; show it as is
+  if (status === 503 && typeof detail === "string" && detail.indexOf("AI quota") !== -1) return detail;
   if (status === 503) return "Demo access isn't set up on this server, so purchases are turned off.";
   if (status === 0 || status === 502 || status === 504) return WAKING_UP;
   return "Something went wrong on the server (HTTP " + status + "). Try again in a moment.";

@@ -33,6 +33,11 @@ def call(fn, *args):
         (429, "Rate limit reached: 10 purchases per hour", "Rate limit reached: 10 purchases per hour"),
         (429, None, "Too many requests. Wait a while and try again."),
         (503, "Purchasing is disabled: no access key is configured", "Demo access isn't set up on this server, so purchases are turned off."),
+        (503, "The demo's AI quota is used up for now. Please try again in a few minutes "
+              "(or tomorrow if the daily limit is reached).",
+         "The demo's AI quota is used up for now. Please try again in a few minutes "
+         "(or tomorrow if the daily limit is reached)."),
+        (503, None, "Demo access isn't set up on this server, so purchases are turned off."),
         (502, None, WAKING_UP),
         (504, None, WAKING_UP),
         (0, None, WAKING_UP),

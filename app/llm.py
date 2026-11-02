@@ -17,6 +17,10 @@ TIMEOUT = 60
 RATE_LIMIT_WAITS = (5, 15, 30)  # seconds before each retry on HTTP 429
 
 
+class QuotaExhausted(Exception):
+    """The provider still answered HTTP 429 after every retry: the free quota is used up for now."""
+
+
 def _env(name):
     """Return an env var, or raise ValueError naming it (never the value)."""
     value = os.environ.get(name)
@@ -37,7 +41,7 @@ def chat(messages, tools=None, model=None):
     """Send a chat completion and return the assistant message.
 
     Uses LLM_MODEL unless model is given. Retries on HTTP 429 after 5s, 15s
-    and 30s, then re-raises.
+    and 30s, then raises QuotaExhausted.
     """
     client = get_client()
     model = model or _env("LLM_MODEL")
@@ -47,7 +51,7 @@ def chat(messages, tools=None, model=None):
     for attempt in range(len(RATE_LIMIT_WAITS) + 1):
         try:
             return client.chat.completions.create(**kwargs).choices[0].message
-        except RateLimitError:
+        except RateLimitError as e:
             if attempt == len(RATE_LIMIT_WAITS):
-                raise
+                raise QuotaExhausted("LLM rate limit still exceeded after retries") from e
             time.sleep(RATE_LIMIT_WAITS[attempt])

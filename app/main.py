@@ -18,6 +18,7 @@ from app import audit, firewall, paypal_client, webhooks
 from app.agent import Proposal, run_agent
 from app.catalog import PRODUCTS, get_product, list_shops
 from app.lab import run_lab
+from app.llm import QuotaExhausted
 from app.rate_limit import PurchaseLimiter, client_ip
 from app.result_page import render_result_page, render_still_checking_page
 from app.security_page import load_summary, render_security_page
@@ -89,8 +90,21 @@ def require_demo_key(x_demo_key: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Missing or invalid X-Demo-Key header")
 
 
-# Protects the free LLM quota: 10 purchases and 10 lab runs per hour per client IP, 100 per day overall
-purchase_limiter = PurchaseLimiter()
+DEFAULT_DAILY_RUN_CAP = 30
+
+
+def daily_run_cap():
+    """DAILY_RUN_CAP from the environment (purchases and lab runs combined), default 30."""
+    try:
+        value = int(os.environ.get("DAILY_RUN_CAP", DEFAULT_DAILY_RUN_CAP))
+    except ValueError:
+        return DEFAULT_DAILY_RUN_CAP
+    return value if value > 0 else DEFAULT_DAILY_RUN_CAP
+
+
+# Protects the free LLM quota: 10 purchases and 10 lab runs per hour per client IP, and a daily
+# cap on both combined that fits Groq's free tier (about one full run uses 5,500 tokens)
+purchase_limiter = PurchaseLimiter(overall=daily_run_cap())
 
 
 def limit_purchases(request: Request):
@@ -140,12 +154,18 @@ class LabRequest(BaseModel):
         return v.quantize(Decimal("0.01"))
 
 
+QUOTA_MESSAGE = ("The demo's AI quota is used up for now. Please try again in a few minutes (or tomorrow if the daily limit is reached).")
+
+
 @app.post("/lab/run", dependencies=[Depends(require_demo_key)])
 def lab_run(req: LabRequest, request: Request):
     """Attack Lab: the agent and the firewall against the visitor's text. No PayPal order, nothing stored."""
     # Checked here, after the body is validated, so malformed requests don't use up the quota
     limit_lab_runs(request)
-    return run_lab(req.target_shop, req.injected_text, req.visibility == "hidden", req.instruction, req.budget)
+    try:
+        return run_lab(req.target_shop, req.injected_text, req.visibility == "hidden", req.instruction, req.budget)
+    except QuotaExhausted:
+        raise HTTPException(status_code=503, detail=QUOTA_MESSAGE)
 
 
 @app.get("/health")
@@ -242,6 +262,9 @@ def purchase(req: PurchaseRequest):
     """Run the shopping agent and create a PayPal order (AUTHORIZE) for its proposal."""
     try:
         result = run_agent(req.instruction, req.budget, **SCENARIOS[req.scenario])
+    except QuotaExhausted:
+        # Not the agent's fault and not a firewall decision: no order, nothing logged, try later
+        raise HTTPException(status_code=503, detail=QUOTA_MESSAGE)
     except Exception as e:
         partial = getattr(e, "agent_result", None)
         detail = json.dumps(

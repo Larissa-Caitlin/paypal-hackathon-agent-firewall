@@ -17,7 +17,7 @@ def _per(seconds):
 
 
 class PurchaseLimiter:
-    def __init__(self, per_ip=10, per_ip_window=3600, overall=100, overall_window=86400, clock=time.monotonic):
+    def __init__(self, per_ip=10, per_ip_window=3600, overall=30, overall_window=86400, clock=time.monotonic):
         self.per_ip = per_ip
         self.per_ip_window = per_ip_window
         self.overall = overall

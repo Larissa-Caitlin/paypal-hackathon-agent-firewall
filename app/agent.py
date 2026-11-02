@@ -87,6 +87,8 @@ class AgentResult:
 
 
 MAX_TOOL_CALL_RETRIES = 2
+NUDGE = ("Please make your choice now by calling propose_payment, or reply with a short reason why no "
+         "product fits the request.")
 
 
 def _is_invalid_tool_call(error) -> bool:
@@ -161,6 +163,7 @@ def run_agent(
 
     # max_steps caps LLM calls, retries included, so a run can't loop forever
     llm_calls = 0
+    nudged = False
     while llm_calls < max_steps:
         retries = 0
         while True:
@@ -190,6 +193,13 @@ def run_agent(
             result.final_message = msg.content
             result.trace.append(AgentStep("message", None, None, msg.content))
         if not msg.tool_calls:
+            # The model sometimes ends with a text reply instead of choosing. Remind it
+            # once, if the call budget allows; its answer is still only a proposal.
+            if result.proposal is None and not nudged and llm_calls < max_steps:
+                nudged = True
+                messages.append({"role": "user", "content": NUDGE})
+                result.trace.append(AgentStep("message", None, None, "Reminded the agent to choose"))
+                continue
             break
 
         for call in msg.tool_calls:

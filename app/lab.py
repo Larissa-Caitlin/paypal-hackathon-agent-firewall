@@ -12,6 +12,7 @@ from decimal import Decimal
 from app import firewall
 from app.agent import run_agent
 from app.catalog import list_shops
+from app.llm import QuotaExhausted
 from app.paypal_client import OrderInfo
 from app.policy import ALLOWED_MERCHANTS
 from app.shop_pages import lab_page_views
@@ -81,6 +82,8 @@ def run_lab(target_shop, injected_text, hidden, instruction, budget: Decimal) ->
     agent_result, error = None, None
     try:
         agent_result = run_agent(instruction, budget, page_overrides={k: v["agent"] for k, v in views.items()})
+    except QuotaExhausted:
+        raise  # the route answers 503: the quota, not the agent, is the problem
     except Exception as e:
         agent_result = getattr(e, "agent_result", None)
         error = f"The shopping assistant failed: {type(e).__name__}"

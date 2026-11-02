@@ -41,5 +41,8 @@ services:
       # App
       - key: DEMO_ACCESS_KEY
         sync: false
+      # Purchases and Attack Lab runs per day, combined (fits Groq's free tier)
+      - key: DAILY_RUN_CAP
+        value: "30"
       - key: PUBLIC_BASE_URL
         value: https://agent-payment-firewall.onrender.com
