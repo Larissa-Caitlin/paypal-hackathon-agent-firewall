@@ -74,3 +74,43 @@ def test_every_page_has_visible_focus_and_the_shared_nav(client):
     assert ":focus-visible" in CSS
     for name, html in pages(client).items():
         assert 'class="site-nav"' in html, name
+
+
+LOGO = '<img class="brand-mark" src="/static/logo.svg" alt="" width="12" height="12">'
+FAVICON = '<link rel="icon" type="image/svg+xml" href="/static/logo.svg">'
+
+
+def all_pages(client):
+    from app.result_page import render_still_checking_page
+
+    return {**pages(client), "still-checking": render_still_checking_page("ORD-1")}
+
+
+def test_logo_and_favicon_on_every_page(client):
+    for name, html in all_pages(client).items():
+        assert html.count(LOGO) == 1, name
+        head = html.split("</head>", 1)[0]
+        assert FAVICON in head, name
+        assert 'class="brand-mark" aria-hidden' not in html, name  # the old square is gone
+
+
+def test_pages_have_no_inline_scripts(client):
+    for name, html in all_pages(client).items():
+        for tag in re.findall(r"<script\b[^>]*>", html):
+            assert re.fullmatch(r'<script src="/static/[\w.]+\.js" defer>', tag), (name, tag)
+        assert not re.search(r"<script\b[^>]*>\s*[^<\s]", html), name
+        assert not re.search(r"\son\w+\s*=", html), name
+
+
+def test_logo_svg_is_a_plain_static_shield(client):
+    resp = client.get("/static/logo.svg")
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("image/svg+xml")
+    svg = resp.text
+    assert 'viewBox="0 0 20 20"' in svg
+    assert 'stroke="#4A9EDB"' in svg and 'stroke-width="2"' in svg and 'fill="none"' in svg
+    assert "stroke-dasharray" in svg  # the trust-boundary line
+    for banned in ("<script", "<text", "Gradient", "<image", "href", "on", "<style"):
+        if banned == "on":
+            assert not re.search(r"\son\w+\s*=", svg)
+        else:
+            assert banned not in svg, banned

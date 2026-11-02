@@ -11,7 +11,7 @@ def site_header(current) -> str:
     )
     return (
         '<header class="site-header">'
-        '<a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>'
+        '<a class="brand" href="/"><img class="brand-mark" src="/static/logo.svg" alt="" width="12" height="12">'
         '<span class="brand-name">Agent Payment Firewall</span></a>'
         f'<nav class="site-nav" aria-label="Main">{links}</nav>'
         "</header>"

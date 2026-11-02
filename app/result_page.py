@@ -328,6 +328,7 @@ def render_still_checking_page(order_id) -> str:
   <meta http-equiv="refresh" content="{STILL_CHECKING_REFRESH_SECONDS}">
   <title>Still checking this payment: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
 </head>
 <body>
 <main class="container">
@@ -361,6 +362,7 @@ def render_result_page(row, confirmations=None) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>The firewall's decision: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
 </head>
 <body>
 <main class="container">

@@ -255,6 +255,7 @@ def render_security_page(summary) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Security: Agent Payment Firewall</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
 </head>
 <body>
 <main class="container">
