@@ -77,8 +77,8 @@ p, .reasons li, .limitations li, .how-steps li { max-width: var(--prose); }
 }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
 .brand-name { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: 0; }
-/* Shield logo (app/static/logo.svg), the same 12px footprint as the old square */
-.brand-mark { width: 12px; height: 12px; flex: none; display: block; }
+/* Shield logo (app/static/logo.svg); the flex .brand centres it with the title */
+.brand-mark { width: 16px; height: 16px; flex: none; display: block; }
 .site-nav { display: flex; gap: 4px; flex-wrap: wrap; }
 .site-nav a {
   color: var(--muted); text-decoration: none; font-weight: 500; font-size: 0.94rem;

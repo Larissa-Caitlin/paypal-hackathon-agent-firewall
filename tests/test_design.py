@@ -76,7 +76,7 @@ def test_every_page_has_visible_focus_and_the_shared_nav(client):
         assert 'class="site-nav"' in html, name
 
 
-LOGO = '<img class="brand-mark" src="/static/logo.svg" alt="" width="12" height="12">'
+LOGO = '<img class="brand-mark" src="/static/logo.svg" alt="" width="16" height="16">'
 FAVICON = '<link rel="icon" type="image/svg+xml" href="/static/logo.svg">'
 
 
@@ -114,3 +114,9 @@ def test_logo_svg_is_a_plain_static_shield(client):
             assert not re.search(r"\son\w+\s*=", svg)
         else:
             assert banned not in svg, banned
+
+
+
+def test_logo_is_16px_and_centred_with_the_title():
+    assert ".brand-mark { width: 16px; height: 16px; flex: none; display: block; }" in CSS
+    assert re.search(r"\.brand \{[^}]*display: flex;[^}]*align-items: center;", CSS)
