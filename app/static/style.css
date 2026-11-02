@@ -451,6 +451,9 @@ pre.text {
 .scorecard-bad { border-color: var(--block); background: var(--block-bg); }
 .scorecard-bad .scorecard-value { color: var(--block-text); }
 .scorecard-neutral .scorecard-value { color: var(--muted); }
+.scorecard-info { border-color: var(--trusted); background: var(--trusted-bg); }
+.scorecard-info .scorecard-value { color: var(--trusted); }
+.scorecard-note { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
 
 /* Security page */
 .hero { margin-bottom: 56px; }

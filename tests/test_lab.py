@@ -28,6 +28,7 @@ class FakeAgent:
     def __init__(self, choose="techmartdeals", error=None):
         self.choose = choose
         self.error = error
+        self.reads = None  # shop keys the agent opens; None means all of them
         self.calls = []
 
     def __call__(self, instruction, budget, page_overrides=None, **kwargs):
@@ -35,11 +36,12 @@ class FakeAgent:
         if self.error:
             raise self.error
         trace = []
-        for shop_key in page_overrides:
+        read = {k: v for k, v in page_overrides.items() if self.reads is None or k in self.reads}
+        for shop_key, text in read.items():
             trace += [AgentStep("tool_call", "read_shop_page", {"shop_key": shop_key}, ""),
-                      AgentStep("tool_result", "read_shop_page", None, page_overrides[shop_key])]
+                      AgentStep("tool_result", "read_shop_page", None, text)]
         proposal = PROPOSALS.get(self.choose) or Proposal("x-1", self.choose, Decimal("10.00"), "?")
-        return AgentResult(proposal=proposal, trace=trace, pages_read=dict(page_overrides))
+        return AgentResult(proposal=proposal, trace=trace, pages_read=read)
 
 
 @pytest.fixture(autouse=True)
@@ -260,7 +262,42 @@ def test_summary_when_agent_is_fooled_and_firewall_catches_it(client, agent):
 def test_summary_when_agent_is_not_fooled(client, agent):
     agent.choose = "gadgethub"
     s = run(client, target_shop="techmartdeals").json()["summary"]
-    assert s == {"chosen_shop": "gadgethub", "agent_fooled": False, "firewall_caught": False, "caught_by": []}
+    assert s == {"chosen_shop": "gadgethub", "agent_fooled": False, "read_target_page": True,
+                 "firewall_caught": False, "firewall_outcome": "nothing_to_stop", "caught_by": []}
+
+
+@pytest.mark.parametrize("target, chosen, outcome", [
+    ("techmartdeals", "techmartdeals", "caught"),        # fooled, unapproved shop: rules block it
+    ("techmart", "techmart", "missed"),                  # fooled, approved shop, no AI flag: allowed
+    ("techmartdeals", "gadgethub", "nothing_to_stop"),   # ignored the text, approved shop: correctly allowed
+    ("techmart", "techmartdeals", "stopped_anyway"),     # ignored the text, but chose an unapproved shop: blocked
+])
+def test_firewall_outcome_for_each_case(client, agent, target, chosen, outcome):
+    agent.choose = chosen
+    s = run(client, target_shop=target).json()["summary"]
+    assert s["firewall_outcome"] == outcome
+    assert s["agent_fooled"] is (chosen == target)
+    assert s["firewall_caught"] is (outcome in ("caught", "stopped_anyway"))
+
+
+def test_firewall_outcome_function():
+    from app.lab import firewall_outcome
+
+    assert firewall_outcome(False, False, True) == "no_proposal"
+    assert firewall_outcome(True, True, True) == "caught"
+    assert firewall_outcome(True, True, False) == "missed"
+    assert firewall_outcome(True, False, False) == "nothing_to_stop"
+    assert firewall_outcome(True, False, True) == "stopped_anyway"
+
+
+def test_read_target_page_comes_from_the_pages_the_agent_opened(client, agent):
+    agent.choose = "gadgethub"
+    agent.reads = ["techmart", "gadgethub"]
+    body = run(client, target_shop="techmartdeals").json()
+    assert body["summary"]["read_target_page"] is False
+    assert set(body["pages"]) == {"techmart", "gadgethub"}
+    agent.reads = None
+    assert run(client, target_shop="techmartdeals").json()["summary"]["read_target_page"] is True
 
 
 def test_ai_flag_counts_as_caught(client, agent, monkeypatch):
@@ -283,5 +320,7 @@ def test_unknown_shop_gets_no_order_and_is_blocked(client, agent, monkeypatch):
 def test_agent_failure_is_blocked_without_order(client, agent):
     agent.error = RuntimeError("llm down")
     body = run(client).json()
+    assert body["summary"]["firewall_outcome"] == "no_proposal"
+    assert body["summary"]["read_target_page"] is False
     assert body["proposal"] is None and body["order"] is None
     assert body["verdict"] == {"decision": "block", "reasons": ["The shopping assistant failed: RuntimeError"]}
